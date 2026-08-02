@@ -70,9 +70,15 @@ function ExcelHub({ clients, settings, onUpdate }) {
           <h2 className="text-xl font-bold text-navy">لوحة تحكم إكسل — كل ملفات كل عميل في مكان واحد</h2>
           <p className="mt-1 text-xs text-muted">مقايسة Excel كاملة، رابط مجلد الملفات (العقد والعرض التقديمي ونموذج التسليم)، وتصدير ملخص شامل.</p>
         </div>
-        <button onClick={() => exportPipelineSummary(clients, settings)} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm bg-navy">
-          <Download size={16} /> تصدير ملخص كل العملاء
-        </button>
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => exportPipelineSummary(clients, settings)} className="btn btn-primary">
+            <Download size={15} /> ملخص كل العملاء
+          </button>
+          {/* للمحاسب: كشف حركة موحّد بدل نقل الأرقام شفهيًا */}
+          <button onClick={() => exportLedger(clients)} className="btn btn-gold" title="كشف حركة بكل العقود والتحصيلات والمصروفات">
+            <FileSpreadsheet size={15} /> دفتر الحركة للمحاسب
+          </button>
+        </div>
       </div>
 
       {clients.length > 0 && (
@@ -687,6 +693,7 @@ function AppInner() {
             team={team}
             currentMember={currentMember}
             priceBook={priceBook}
+            allClients={clients}
             onBack={() => setSelectedId(null)}
             onChange={(patch) => updateClient(selected.id, patch)}
             onDelete={() => deleteClient(selected.id)}
@@ -695,6 +702,7 @@ function AppInner() {
 
         {tab === "pricebook" && (
           <PriceBookPanel
+            clients={clients}
             book={priceBook}
             currentMember={currentMember}
             onSave={async (next) => { setPriceBook(next); await storageSet("settings:pricebook", next); }}
@@ -946,6 +954,36 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
 /* ═══════════ العمود الفقري الزمني ═══════════
    التبويبات تُخفي التسلسل. أول سؤال يخطر لمن يفتح صفحة مشروع هو
    "أين هو الآن؟" — وهذا الشريط يجيبه قبل أي شيء آخر. */
+/* ═══════════ تنبيهات التسعير ═══════════
+   لا يمنع شيئًا — يعرض للمراجعة فقط. المكتب أدرى بسعره، لكن
+   صفرًا زائدًا في الإدخال خطأ صامت يكلّف عقدًا كاملًا. */
+function PriceAnomalies({ client, allClients, priceBook, currentMember }) {
+  const outliers = useMemo(
+    () => priceOutliers(client, ITEMS, allClients || [], priceBook || DEFAULT_PRICEBOOK),
+    [client, allClients, priceBook]
+  );
+  if (!can(currentMember, "editUnitPrice") || outliers.length === 0) return null;
+  return (
+    <div className="sheet mt-4 p-3" style={{ borderColor: "#B45309" }}>
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: "#B45309" }}>
+        <AlertCircle size={14} /> أسعار تستحق المراجعة
+      </div>
+      {outliers.map(o => (
+        <div key={o.id} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
+          <span className="code">{o.id}</span>
+          <span className="font-semibold text-ink">{o.name}</span>
+          <span className="num text-muted">
+            أدخلت <b style={{ color: "#C00000" }}>{fmt(o.entered)}</b> — المعتاد لديك قرابة <b>{fmt(o.reference)}</b>
+          </span>
+        </div>
+      ))}
+      <div className="mt-1.5 text-[10px] text-muted">
+        قد يكون مقصودًا. هذا تنبيه لا منع.
+      </div>
+    </div>
+  );
+}
+
 function ProjectSpine({ client }) {
   const idx = Math.max(0, STAGES.indexOf(client.stage));
   return (
@@ -996,6 +1034,7 @@ function ProjectSpine({ client }) {
 }
 
 function RoomSchedule({ client, onChange }) {
+  const [importMsg, setImportMsg] = useState([]);
   const rooms = client.rooms || [];
   const q = deriveQuantities(rooms);
   const setRooms = (next) => onChange({ rooms: next });
@@ -1009,14 +1048,33 @@ function RoomSchedule({ client, onChange }) {
     <div className="sheet mt-4 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="h-section">جدول الغرف</span>
-        <button onClick={() => setRooms([...rooms, newRoom(rooms.length + 1)])} className="btn btn-primary">
-          <Plus size={14} /> غرفة
-        </button>
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => setRooms([...rooms, newRoom(rooms.length + 1)])} className="btn btn-primary">
+            <Plus size={14} /> غرفة
+          </button>
+          <label className="btn" style={{ border: "1px solid var(--color-line)", color: NAVY, cursor: "pointer" }}
+                 title="صدّر Room Schedule من Revit إلى CSV واستورده هنا">
+            <UploadCloud size={14} /> استيراد من BIM
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={async (e) => {
+              const f = e.target.files?.[0]; e.target.value = "";
+              if (!f) return;
+              const res = parseSchedule(parseCSV(await f.text()));
+              setImportMsg(res.warnings);
+              if (res.rooms.length) setRooms([...rooms, ...res.rooms]);
+            }} />
+          </label>
+        </div>
       </div>
 
+      {importMsg.length > 0 && (
+        <div className="mb-2 p-2 text-[10px]" style={{ background: "#FFF7E6", border: "1px solid #E8C97A", borderRadius: 2 }}>
+          {importMsg.map((w, i) => <div key={i} style={{ color: "#8A6D00" }}>• {w}</div>)}
+        </div>
+      )}
       {rooms.length === 0 ? (
         <div className="py-4 text-center text-xs text-muted">
-          أدخل الغرف ومقاساتها، فتُحسب كميات الأرضيات والسكيرتنج وسيراميك الحمامات تلقائيًا.
+          أدخل الغرف يدويًا، أو استورد Room Schedule من نموذج Revit مباشرة —
+          فتُحسب كميات الأرضيات والسكيرتنج وسيراميك الحمامات تلقائيًا.
         </div>
       ) : (
         <>
@@ -1172,7 +1230,7 @@ function FinancePanel({ client, rows, currentMember, onChange }) {
   );
 }
 
-function ClientDetail({ client, settings, priceBook, saving, team, currentMember, onBack, onChange, onDelete }) {
+function ClientDetail({ client, settings, priceBook, allClients, saving, team, currentMember, onBack, onChange, onDelete }) {
   const calc = useMemo(() => effectiveTotals(client, settings), [client, settings]);
   const margin = useMemo(() => {
     if (!can(currentMember, "viewCostBasis")) return null;
@@ -1351,6 +1409,7 @@ function ClientDetail({ client, settings, priceBook, saving, team, currentMember
             </div>
           </div>
 
+          <PriceAnomalies client={client} allClients={allClients} priceBook={priceBook} currentMember={currentMember} />
           <RoomSchedule client={client} onChange={onChange} />
           <FullItemBOQ client={client} onChange={onChange} currentMember={currentMember} />
 
@@ -2409,11 +2468,16 @@ class ErrorBoundary extends React.Component {
 /* ============================= دفتر الأسعار =============================
    أثمن ما يملكه المكتب: خلاصة تكاليف كل مشروع نفّذه. كان مدفونًا في الكود
    ولا يُعدَّل إلا بمبرمج — الآن يملكه المكتب ويحدّثه بنفسه. */
-function PriceBookPanel({ book, onSave, currentMember }) {
+function PriceBookPanel({ book, onSave, currentMember, clients }) {
   const [q, setQ] = useState("");
   const mayEdit = can(currentMember, "editUnitPrice");
   const list = useMemo(() => catalogueWithCustom(book), [book]);
   const stale = useMemo(() => new Set(staleItems(book).map(x => x.id)), [book]);
+  // ما تتجاوز سعره يدويًا في كل مرة — علامة أن الكتالوج نفسه متأخر عن السوق
+  const drift = useMemo(
+    () => catalogueDriftReport(clients || [], catalogueWithCustom(book), book, 1),
+    [clients, book]
+  );
 
   const visible = list.filter(it =>
     !q.trim() || it[1].includes(q.trim()) || it[5].toLowerCase().includes(q.trim().toLowerCase()));
@@ -2442,6 +2506,27 @@ function PriceBookPanel({ book, onSave, currentMember }) {
       <input className="inp mb-3" placeholder="بحث بالاسم أو الكود…" value={q} onChange={e => setQ(e.target.value)} />
 
       <div className="overflow-x-auto">
+      {drift.length > 0 && (
+        <div className="sheet mb-3 p-3" style={{ borderColor: "#BF9000" }}>
+          <div className="mb-2 text-xs font-bold" style={{ color: "#8A6D00" }}>
+            بنود تسعّرها فعليًا بغير سعر الكتالوج
+          </div>
+          {drift.slice(0, 6).map(d => (
+            <div key={d.id} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
+              <span className="code">{d.id}</span>
+              <span className="font-semibold text-ink">{d.name}</span>
+              <span className="num text-muted">
+                الكتالوج <b>{fmt(d.catalogue)}</b> · المعتاد لديك <b style={{ color: "#1E7B45" }}>{fmt(d.suggested)}</b>
+                {" "}({d.drift > 0 ? "+" : ""}{(d.drift * 100).toFixed(0)}% من {d.samples} مشاريع)
+              </span>
+            </div>
+          ))}
+          <div className="mt-1.5 text-[10px] text-muted">
+            مستنتَج من مشاريعك أنت — لا من أي مصدر خارجي. حدّث الكتالوج ليوفّر عليك التجاوز اليدوي كل مرة.
+          </div>
+        </div>
+      )}
+
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b" style={{ borderColor: "var(--color-line)" }}>
