@@ -19,6 +19,7 @@ import {
 } from "./domain/finance.js";
 import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, suggestedQuantities, applySuggestions } from "./domain/rooms.js";
 import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
+import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET } from "./data/photos.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "./domain/catalogue.js";
 import {
@@ -942,6 +943,58 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
    المعماري يفكر بالغرف لا بالبنود. تُدخل الغرف مرة، فتُشتق منها كميات
    الأرضيات والسكيرتنج وسيراميك الحوائط والأسقف تلقائيًا.
    الربط بأكواد البنود الثابتة — ولهذا كان إصلاح المعرّفات شرطًا لهذه الميزة. */
+/* ═══════════ العمود الفقري الزمني ═══════════
+   التبويبات تُخفي التسلسل. أول سؤال يخطر لمن يفتح صفحة مشروع هو
+   "أين هو الآن؟" — وهذا الشريط يجيبه قبل أي شيء آخر. */
+function ProjectSpine({ client }) {
+  const idx = Math.max(0, STAGES.indexOf(client.stage));
+  return (
+    <div className="sheet mb-4 p-3">
+      <div className="flex items-center">
+        {STAGES.map((st, i) => {
+          const done = i < idx, here = i === idx;
+          const color = done || here ? (STAGE_COLORS[st] || NAVY) : "var(--color-line-firm)";
+          return (
+            <React.Fragment key={st}>
+              <div className="flex flex-col items-center" style={{ minWidth: 0, flex: "0 0 auto" }}>
+                <span
+                  style={{
+                    width: here ? 12 : 8, height: here ? 12 : 8, borderRadius: "50%",
+                    backgroundColor: done || here ? color : "#FFFFFF",
+                    border: `2px solid ${color}`,
+                  }}
+                />
+                <span
+                  className="mt-1 whitespace-nowrap text-[10px]"
+                  style={{ color: here ? color : "var(--color-muted)", fontWeight: here ? 700 : 500 }}
+                >
+                  {st}
+                </span>
+              </div>
+              {i < STAGES.length - 1 && (
+                <span className="mx-1 flex-1" style={{ height: 2, backgroundColor: i < idx ? (STAGE_COLORS[STAGES[i + 1]] || NAVY) : "var(--color-line)" }} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* ما عُلّق على هذه النقطة من أحداث موثّقة */}
+      {(client.contract || (client.variations || []).length > 0 || client.progressPercent > 0) && (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t pt-2 text-[10px]" style={{ borderColor: "var(--color-line)" }}>
+          {client.contract && <span className="text-muted">عقد مجمّد · <b className="num text-ink">{client.contract.signedAt}</b></span>}
+          {(client.variations || []).length > 0 && (
+            <span className="text-muted">أوامر تغيير · <b className="num text-ink">{(client.variations || []).length}</b></span>
+          )}
+          {client.progressPercent > 0 && (
+            <span className="text-muted">تنفيذ · <b className="num text-ink">{client.progressPercent}%</b>{client.lastVisitAt ? ` حتى ${client.lastVisitAt}` : ""}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoomSchedule({ client, onChange }) {
   const rooms = client.rooms || [];
   const q = deriveQuantities(rooms);
@@ -1222,6 +1275,7 @@ function ClientDetail({ client, settings, priceBook, saving, team, currentMember
 
         {/* right: scope selection + calc */}
         <div className="lg:col-span-2">
+          <ProjectSpine client={client} />
           <div className="mb-4 flex gap-1 rounded-lg p-1 bg-light">
             <button
               onClick={() => setInnerTab("pricing")}
@@ -1540,6 +1594,82 @@ function FullItemBOQ({ client, onChange, currentMember }) {
   );
 }
 
+/* ═══════════ صور الزيارة ═══════════
+   الروابط موقّتة لأن مساحة التخزين خاصة — صور مواقع العملاء ليست محتوى عامًا.
+   الضغط يحدث في المتصفح قبل الرفع (انظر data/photos.js). */
+function VisitPhotos({ clientId, visit }) {
+  const [items, setItems] = useState([]);
+  const [urls, setUrls] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const available = photosAvailable();
+
+  const refresh = useCallback(async () => {
+    if (!available) return;
+    const list = await listPhotos(clientId, visit.id);
+    setItems(list);
+    if (list.length) setUrls(await signedUrls(list.map(i => i.path)));
+  }, [clientId, visit.id, available]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const onPick = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    setBusy(true); setErr("");
+    let saved = 0;
+    for (const f of files) {
+      try { await uploadPhoto(clientId, visit.id, f); saved++; }
+      catch (ex) { setErr(ex.message); }
+    }
+    setBusy(false);
+    if (saved) await refresh();
+  };
+
+  const remove = async (path) => {
+    if (await deletePhoto(path)) refresh();
+  };
+
+  if (!available) return null;
+
+  return (
+    <div className="mt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="btn" style={{ border: "1px solid var(--color-line)", color: NAVY, cursor: "pointer" }}>
+          <UploadCloud size={14} /> {busy ? "جاري الرفع…" : "إضافة صور"}
+          <input type="file" accept="image/*" multiple className="hidden" onChange={onPick} disabled={busy} />
+        </label>
+        {items.length > 0 && <span className="text-[10px] text-muted">{items.length} صورة</span>}
+      </div>
+      {err && <div className="mt-1 text-[10px]" style={{ color: "#C00000" }}>{err}</div>}
+      {items.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {items.map(it => (
+            <div key={it.path} className="relative" style={{ width: 84, height: 84 }}>
+              {urls[it.path] ? (
+                <a href={urls[it.path]} target="_blank" rel="noreferrer">
+                  <img src={urls[it.path]} alt="صورة موقع" style={{ width: 84, height: 84, objectFit: "cover", border: "1px solid var(--color-line)", borderRadius: 2 }} />
+                </a>
+              ) : (
+                <div className="bg-light" style={{ width: 84, height: 84, borderRadius: 2 }} />
+              )}
+              <button
+                onClick={() => remove(it.path)}
+                className="absolute text-white"
+                style={{ top: 2, left: 2, background: "rgba(0,0,0,.55)", borderRadius: 2, padding: "1px 3px" }}
+                aria-label="حذف الصورة"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SiteVisitLog({ client, onChange }) {
   const [visits, setVisits] = useState([]);
   const [loadingVisits, setLoadingVisits] = useState(true);
@@ -1609,7 +1739,7 @@ function SiteVisitLog({ client, onChange }) {
             <Field label={`نسبة الإنجاز الإجمالية: ${draft.percent}%`}>
               <input type="range" min="0" max="100" step="5" className="w-full" value={draft.percent} onChange={e => setDraft({ ...draft, percent: Number(e.target.value) })} />
             </Field>
-            <Field label="رابط صور الموقع (اختياري)">
+            <Field label="مجلد صور خارجي (اختياري — الرفع المباشر متاح بعد الحفظ)">
               <input className="inp" placeholder="رابط Google Drive أو مشابه" value={draft.photoLink} onChange={e => setDraft({ ...draft, photoLink: e.target.value })} />
             </Field>
           </div>
@@ -1643,9 +1773,10 @@ function SiteVisitLog({ client, onChange }) {
                 {v.notes && <div className="mt-1 text-xs leading-5 text-ink">{v.notes}</div>}
                 {v.photoLink && (
                   <a href={v.photoLink} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-navy">
-                    <ExternalLink size={12} /> عرض الصور
+                    <ExternalLink size={12} /> مجلد خارجي
                   </a>
                 )}
+                <VisitPhotos clientId={client.id} visit={v} />
               </div>
               <button onClick={() => removeVisit(v.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={15} /></button>
             </div>
