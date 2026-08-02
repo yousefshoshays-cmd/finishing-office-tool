@@ -305,7 +305,21 @@ function AppInner() {
     let user = data?.session?.user;
     if (!user) {
       const { data: signData, error } = await withTimeout(sb.auth.signInAnonymously(), 10000);
-      if (error) throw error;
+      if (error) {
+        // الوضع المبسط مقفول على الخادم (وهو الصواب)، لكن هذا المتصفح لا يزال
+        // يحمل إعدادًا قديمًا محفوظًا يطلبه. ننتقل تلقائيًا للوضع الكامل بدل
+        // إظهار خطأ لا مخرج منه — المستخدم لا يجب أن يعرف شيئًا عن localStorage.
+        const msg = String(error.message || "").toLowerCase();
+        if (msg.includes("anonymous") || msg.includes("disabled")) {
+          const cfg = getCloudConfig();
+          if (cfg) setCloudConfig({ ...cfg, simpleMode: false });
+          // simpleMode مشتقّة من localStorage وقت الرسم، لا حالة React — فإعادة
+          // التحميل هي الطريقة الموثوقة لالتقاط الإعداد الجديد مرة واحدة.
+          window.location.reload();
+          return;
+        }
+        throw error;
+      }
       user = signData.user;
     }
     let displayName = "";
