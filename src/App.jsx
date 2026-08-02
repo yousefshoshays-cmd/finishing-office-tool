@@ -198,26 +198,27 @@ function StatCard({ label, value, sub, accent, icon: Icon }) {
 /* ============================= Lightweight SVG charts (no extra dependency) ============================= */
 function StageValueChart({ stats }) {
   const maxVal = Math.max(1, ...STAGES.map(s => stats.byStage[s].value));
-  const barH = 26, gap = 14, leftW = 130, chartW = 420, topPad = 6;
-  const height = STAGES.length * (barH + gap) - gap + topPad * 2;
   return (
-    <svg viewBox={`0 0 ${leftW + chartW + 70} ${height}`} className="w-full" style={{ maxHeight: 230 }}>
-      {STAGES.map((s, i) => {
+    <div className="flex flex-col gap-2.5">
+      {STAGES.map(s => {
         const val = stats.byStage[s].value;
-        const w = (val / maxVal) * chartW;
-        const y = topPad + i * (barH + gap);
+        const pct = (val / maxVal) * 100;
         return (
-          <g key={s}>
-            <text x={leftW - 10} y={y + barH / 2 + 4} textAnchor="end" fontSize="12" fontWeight="700" fill={TEXT} fontFamily="'Cairo', Arial, sans-serif">{s}</text>
-            <rect x={leftW} y={y} width={chartW} height={barH} rx={6} fill={LIGHT} />
-            <rect x={leftW} y={y} width={Math.max(w, val > 0 ? 6 : 0)} height={barH} rx={6} fill={STAGE_COLORS[s] || NAVY} />
-            <text x={leftW + chartW + 12} y={y + barH / 2 + 4} textAnchor="start" fontSize="12" fontWeight="700" fill={NAVY} fontFamily="'Cairo', Arial, sans-serif">
+          <div key={s} className="flex items-center gap-3">
+            <span className="shrink-0 text-xs font-semibold text-ink" style={{ width: 96 }}>{s}</span>
+            <div className="relative h-6 flex-1 overflow-hidden rounded bg-light">
+              <div
+                className="absolute inset-y-0 right-0 rounded transition-all"
+                style={{ width: val > 0 ? `max(${pct}%, 4px)` : 0, backgroundColor: STAGE_COLORS[s] || NAVY }}
+              />
+            </div>
+            <span className="shrink-0 text-left text-xs font-bold tabular-nums text-navy" style={{ width: 78 }}>
               {val > 0 ? fmt(val) : "—"}
-            </text>
-          </g>
+            </span>
+          </div>
         );
       })}
-    </svg>
+    </div>
   );
 }
 
@@ -237,25 +238,28 @@ function MonthlyTrendChart({ clients, settings }) {
     }
   });
   const maxVal = Math.max(1, ...months.map(m => byMonth[m.key].value));
-  const barW = 46, gap = 22, chartH = 150, topPad = 10;
-  const width = months.length * (barW + gap) - gap;
+  const label = (v) => v >= 1000000 ? (v / 1000000).toFixed(1) + "م" : v >= 1000 ? Math.round(v / 1000) + "ألف" : fmt(v);
+
   return (
-    <svg viewBox={`0 0 ${width} ${chartH + 40}`} className="w-full" style={{ maxHeight: 210 }}>
-      {months.map((m, i) => {
+    <div className="flex items-end justify-between gap-2" style={{ height: 190 }}>
+      {months.map(m => {
         const val = byMonth[m.key].value;
-        const h = (val / maxVal) * chartH;
-        const x = i * (barW + gap);
+        // 78% كحد أقصى لارتفاع العمود: يترك مساحة مضمونة للرقم فوقه مهما بلغت القيمة
+        const pct = val > 0 ? Math.max((val / maxVal) * 78, 2) : 0;
         return (
-          <g key={m.key}>
-            <rect x={x} y={topPad + chartH - h} width={barW} height={Math.max(h, val > 0 ? 4 : 0)} rx={6} fill={GOLD} />
-            <text x={x + barW / 2} y={topPad + chartH - h - 8} textAnchor="middle" fontSize="11" fontWeight="700" fill={NAVY} fontFamily="'Cairo', Arial, sans-serif">
-              {val > 0 ? (val >= 1000 ? Math.round(val / 1000) + "K" : val) : ""}
-            </text>
-            <text x={x + barW / 2} y={topPad + chartH + 20} textAnchor="middle" fontSize="11" fontWeight="600" fill={MUTED} fontFamily="'Cairo', Arial, sans-serif">{m.label}</text>
-          </g>
+          <div key={m.key} className="flex flex-1 flex-col items-center justify-end gap-1" style={{ height: "100%" }}>
+            <span className="text-[10px] font-bold tabular-nums text-navy" style={{ minHeight: 14 }}>
+              {val > 0 ? label(val) : ""}
+            </span>
+            <div
+              className="w-full rounded-t transition-all"
+              style={{ height: `${pct}%`, maxWidth: 44, backgroundColor: val > 0 ? GOLD : "transparent" }}
+            />
+            <span className="text-[11px] font-semibold text-muted">{m.label}</span>
+          </div>
         );
       })}
-    </svg>
+    </div>
   );
 }
 
