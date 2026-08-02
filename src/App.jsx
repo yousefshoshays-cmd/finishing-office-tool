@@ -28,7 +28,10 @@ const CLOUD_CONFIG_KEY = "boq_cloud_config"; // raw localStorage key — must ex
 // project, just change these two lines and rebuild.
 const DEFAULT_SUPABASE_URL = "https://oovityllspqojxexkrxg.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_xDKo_zVZU606enHf-RtOIw_e_uabv4Y";
-const DEFAULT_SIMPLE_MODE = true;
+// SECURITY: simple mode grants every anonymous visitor full read/write on all client
+// data. It must never be the default for a publicly reachable deployment. The owner can
+// still turn it on deliberately from Settings for offline testing.
+const DEFAULT_SIMPLE_MODE = false;
 
 let dbPromise = null;
 function getDB() {
@@ -244,6 +247,44 @@ async function approveProfile(id, role) {
     console.error("approveProfile failed", e);
     return false;
   }
+}
+
+/* ============================= Permissions =============================
+   One place that answers "may this role do this?". The UI reads from here so a
+   permission is never re-implemented (and quietly diverged) in two components.
+
+   IMPORTANT: this is presentation only. It hides controls a role shouldn't use,
+   it does NOT protect data — a determined user can call the API directly. The
+   real boundary is the Postgres row-level-security policy (see Settings → SQL).
+   Every rule below must have a matching server-side policy. */
+
+const ROLES = {
+  owner:    { label: "مالك المكتب", color: "#BF9000", textOn: "#1F1F1F" },
+  manager:  { label: "مدير مشاريع", color: "#1E7B45", textOn: "#FFFFFF" },
+  engineer: { label: "مهندس",       color: "#2E5395", textOn: "#FFFFFF" },
+  pending:  { label: "بانتظار الموافقة", color: "#B45309", textOn: "#FFFFFF" },
+};
+const ASSIGNABLE_ROLES = ["engineer", "manager", "owner"];
+
+const PERMISSIONS = {
+  viewAllClients:   ["owner", "manager"],
+  editUnitPrice:    ["owner", "manager"],
+  viewCostBasis:    ["owner", "manager"],
+  advanceToSigned:  ["owner", "manager"],
+  deleteClient:     ["owner"],
+  manageTeam:       ["owner"],
+  editClientData:   ["owner", "manager", "engineer"],
+  logSiteVisit:     ["owner", "manager", "engineer"],
+};
+
+function can(member, action) {
+  const allowed = PERMISSIONS[action];
+  if (!allowed) return false;
+  return !!member && allowed.includes(member.role);
+}
+
+function roleLabel(role) {
+  return (ROLES[role] || ROLES.engineer).label;
 }
 
 /* ============================= Brand ============================= */
@@ -1423,7 +1464,7 @@ function AppInner() {
   const selected = clients.find(c => c.id === selectedId) || null;
 
   const visibleClients = useMemo(() => {
-    if (!currentMember || currentMember.role === "owner") return clients;
+    if (!currentMember || can(currentMember, "viewAllClients")) return clients;
     return clients.filter(c => c.engineer === currentMember.name);
   }, [clients, currentMember]);
 
@@ -1511,8 +1552,8 @@ function AppInner() {
             </span>
           ) : (
             <button onClick={signOut} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: NAVY_DARK, color: "#D9E1F2" }}>
-              <span className="rounded-full px-2 py-0.5 font-bold" style={{ backgroundColor: currentMember.role === "owner" ? GOLD : "#2E5395", color: currentMember.role === "owner" ? "#1F1F1F" : "#FFFFFF" }}>
-                {currentMember.role === "owner" ? "مالك المكتب" : "مهندس"}
+              <span className="rounded-full px-2 py-0.5 font-bold" style={{ backgroundColor: (ROLES[currentMember.role] || ROLES.engineer).color, color: (ROLES[currentMember.role] || ROLES.engineer).textOn }}>
+                {roleLabel(currentMember.role)}
               </span>
               {currentMember.name} — تبديل
             </button>
@@ -1562,6 +1603,7 @@ function AppInner() {
             settings={settings}
             saving={saving}
             team={team}
+            currentMember={currentMember}
             onBack={() => setSelectedId(null)}
             onChange={(patch) => updateClient(selected.id, patch)}
             onDelete={() => deleteClient(selected.id)}
@@ -1768,7 +1810,7 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
 }
 
 /* ============================= Client detail ============================= */
-function ClientDetail({ client, settings, saving, team, onBack, onChange, onDelete }) {
+function ClientDetail({ client, settings, saving, team, currentMember, onBack, onChange, onDelete }) {
   const calc = useMemo(() => calcClient(client, settings), [client, settings]);
   const [innerTab, setInnerTab] = useState("pricing"); // pricing | site
 
@@ -1902,7 +1944,7 @@ function ClientDetail({ client, settings, saving, team, onBack, onChange, onDele
             </div>
           </div>
 
-          <FullItemBOQ client={client} onChange={onChange} />
+          <FullItemBOQ client={client} onChange={onChange} currentMember={currentMember} />
 
           <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: NAVY }}>
             <div className="mb-3 text-sm font-bold text-white">ملخص السعر</div>
@@ -1936,8 +1978,9 @@ function ClientDetail({ client, settings, saving, team, onBack, onChange, onDele
 
 /* ============================= Site visit log ============================= */
 /* ============================= Full itemized BOQ editor (per-item overrides) ============================= */
-function FullItemBOQ({ client, onChange }) {
+function FullItemBOQ({ client, onChange, currentMember }) {
   const [expanded, setExpanded] = useState(false);
+  const mayEditPrice = can(currentMember, "editUnitPrice");
   const area = Number(client.area) || 0;
   const itemIncluded = client.itemIncluded || {};
   const itemLevel = client.itemLevel || {};
@@ -2073,11 +2116,13 @@ function FullItemBOQ({ client, onChange }) {
                   <div className="col-span-6 sm:col-span-2">
                     <input
                       type="number"
-                      disabled={!r.included}
+                      disabled={!r.included || !mayEditPrice}
+                      readOnly={!mayEditPrice}
+                      title={mayEditPrice ? "" : "تعديل سعر الوحدة متاح لمدير المشاريع أو مالك المكتب فقط"}
                       className="w-full rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                      style={{ border: `1px solid ${r.hasPriceOverride ? "#BF9000" : BORDER}`, color: r.hasPriceOverride ? "#8A6D00" : TEXT }}
+                      style={{ border: `1px solid ${r.hasPriceOverride ? "#BF9000" : BORDER}`, color: r.hasPriceOverride ? "#8A6D00" : TEXT, backgroundColor: mayEditPrice ? "transparent" : "#F5F7FA", cursor: mayEditPrice ? "auto" : "not-allowed" }}
                       value={Object.prototype.hasOwnProperty.call(itemPrice, name) ? itemPrice[name] : Math.round(r.price)}
-                      onChange={e => setPriceOverride(name, e.target.value)}
+                      onChange={e => { if (mayEditPrice) setPriceOverride(name, e.target.value); }}
                     />
                     {r.hasPriceOverride && (
                       <span className="text-[9px]" style={{ color: MUTED }}>
@@ -2262,7 +2307,7 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
               {team.map(m => (
                 <button key={m.id} onClick={() => onSignIn(m)} className="flex items-center justify-between rounded-lg px-4 py-2.5 text-sm font-semibold" style={{ border: `1px solid ${BORDER}` }}>
                   <span>{m.name}</span>
-                  <Badge text={m.role === "owner" ? "مالك المكتب" : "مهندس"} color={m.role === "owner" ? GOLD : "#2E5395"} />
+                  <Badge text={roleLabel(m.role)} color={(ROLES[m.role] || ROLES.engineer).color} />
                 </button>
               ))}
             </div>
@@ -2436,7 +2481,10 @@ function SettingsPanel({ settings, onSave, onExportBackup, onImportBackup, clien
   const currentSimpleMode = !!getCloudConfig()?.simpleMode;
   useEffect(() => setLocal(settings), [settings]);
 
-  const SIMPLE_SQL_SCRIPT = `-- SIMPLE / TESTING MODE — no per-person accounts, no approval step.
+  const SIMPLE_SQL_SCRIPT = `-- ⚠️ تحذير: لا تستخدم هذا الوضع مع رابط عام على الإنترنت.
+-- أي شخص يفتح الرابط يحصل على صلاحية كاملة لقراءة وتعديل ومسح كل بيانات العملاء.
+-- استخدمه فقط للتجربة المحلية، ثم أوقف Anonymous Sign-ins من Supabase فورًا.
+-- SIMPLE / TESTING MODE — no per-person accounts, no approval step.
 -- Anyone who opens the app with this project's URL + key gets full read/write
 -- access instantly (via an anonymous session). Fine for early testing with your
 -- own team; do NOT keep this on once real client data / real office use begins.
@@ -2521,13 +2569,13 @@ drop policy if exists "owners update profiles" on profiles;
 
 -- kv: only people an owner has actually approved (role owner/engineer) may read or write
 create policy "approved members read kv" on kv for select
-  using (exists (select 1 from profiles where id = auth.uid() and role in ('owner','engineer')));
+  using (exists (select 1 from profiles where id = auth.uid() and role in ('owner','manager','engineer')));
 create policy "approved members insert kv" on kv for insert
-  with check (exists (select 1 from profiles where id = auth.uid() and role in ('owner','engineer')));
+  with check (exists (select 1 from profiles where id = auth.uid() and role in ('owner','manager','engineer')));
 create policy "approved members update kv" on kv for update
-  using (exists (select 1 from profiles where id = auth.uid() and role in ('owner','engineer')));
+  using (exists (select 1 from profiles where id = auth.uid() and role in ('owner','manager','engineer')));
 create policy "approved members delete kv" on kv for delete
-  using (exists (select 1 from profiles where id = auth.uid() and role in ('owner','engineer')));
+  using (exists (select 1 from profiles where id = auth.uid() and role in ('owner','manager','engineer')));
 
 -- profiles: anyone signed in can see the roster (needed to show pending/team lists);
 -- only an existing owner can ever change someone's role — enforced twice (policy + trigger)
@@ -2671,7 +2719,7 @@ alter publication supabase_realtime add table profiles;`;
           </div>
         ) : (
         <>
-        {cloud && currentMember?.role === "owner" && pendingMembers && pendingMembers.length > 0 && (
+        {cloud && can(currentMember, "manageTeam") && pendingMembers && pendingMembers.length > 0 && (
           <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: "#FFF7E6" }}>
             <div className="mb-2 text-xs font-bold" style={{ color: "#8A6D00" }}>طلبات انضمام بانتظار الموافقة ({pendingMembers.length})</div>
             <div className="flex flex-col gap-2">
@@ -2681,9 +2729,17 @@ alter publication supabase_realtime add table profiles;`;
                     <div className="font-semibold">{p.name}</div>
                     <div style={{ color: MUTED }}>{p.email}</div>
                   </div>
-                  <div className="flex gap-1.5">
-                    <button onClick={() => onApproveMember(p.id, "engineer")} className="rounded-md px-2.5 py-1.5 text-xs font-bold text-white" style={{ backgroundColor: "#2E5395" }}>قبول كمهندس</button>
-                    <button onClick={() => onApproveMember(p.id, "owner")} className="rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: GOLD, color: "#1F1F1F" }}>قبول كمالك</button>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ASSIGNABLE_ROLES.map(r => (
+                      <button
+                        key={r}
+                        onClick={() => onApproveMember(p.id, r)}
+                        className="rounded-md px-2.5 py-1.5 text-xs font-bold"
+                        style={{ backgroundColor: ROLES[r].color, color: ROLES[r].textOn }}
+                      >
+                        قبول كـ{ROLES[r].label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -2696,7 +2752,7 @@ alter publication supabase_realtime add table profiles;`;
             <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: LIGHT }}>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold">{m.name}</span>
-                <Badge text={m.role === "owner" ? "مالك المكتب" : "مهندس"} color={m.role === "owner" ? GOLD : "#2E5395"} />
+                <Badge text={roleLabel(m.role)} color={(ROLES[m.role] || ROLES.engineer).color} />
                 {currentMember?.id === m.id && <span className="text-xs" style={{ color: MUTED }}>(أنت الآن)</span>}
               </div>
               {!cloud && team.length > 1 && (
