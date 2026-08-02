@@ -203,28 +203,19 @@ create trigger audit_clients after update on clients
 
 do $$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'clients'
-  ) then
-    alter publication supabase_realtime add table clients;
-  end if;
+  alter publication supabase_realtime add table clients;
+exception
+  when duplicate_object then null;   -- 42710: مضاف مسبقًا، نتجاهله
 end $$;
 do $$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'client_items'
-  ) then
-    alter publication supabase_realtime add table client_items;
-  end if;
+  alter publication supabase_realtime add table client_items;
+exception
+  when duplicate_object then null;   -- 42710: مضاف مسبقًا، نتجاهله
 end $$;
 do $$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'site_visits'
-  ) then
-    alter publication supabase_realtime add table site_visits;
-  end if;
+  alter publication supabase_realtime add table site_visits;
+exception
+  when duplicate_object then null;   -- 42710: مضاف مسبقًا، نتجاهله
 end $$;
