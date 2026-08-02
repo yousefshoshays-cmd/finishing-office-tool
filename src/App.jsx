@@ -4,979 +4,24 @@ import {
   Phone, MapPin, Ruler, ChevronLeft, Save, X, AlertCircle, Loader2,
   FileSpreadsheet, ExternalLink, FileText, PartyPopper, UploadCloud, ShieldCheck, Wifi, ChevronDown,
 } from "lucide-react";
-import * as ExcelJS from "exceljs";
-import pptxgen from "pptxgenjs";
-import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, Header, Footer, PageNumber, VerticalAlign } from "docx";
-import { saveAs } from "file-saver";
-import { openDB } from "idb";
-import { createClient } from "@supabase/supabase-js";
 
-/* ============================= Persistent storage: local (IndexedDB) or cloud (Supabase) =============================
-   By default this app runs fully standalone — data lives in this browser's IndexedDB only, and
-   does NOT sync between devices. If the office configures cloud sync (Settings → المزامنة السحابية)
-   with a Supabase project, every read/write below transparently goes to a shared Postgres table
-   instead, so every engineer's device sees the same live data. The rest of the app never needs to
-   know which mode is active — it always just calls storageGet/storageSet/storageDelete/storageListKeys. */
-const DB_NAME = "boq_office_db";
-const STORE = "kv";
-const CLOUD_CONFIG_KEY = "boq_cloud_config"; // raw localStorage key — must exist before we know which mode to use
-
-// Built into this deployment so anyone opening the site is connected automatically —
-// no copy/paste setup per device. The publishable key is safe to ship in client code
-// by design; real protection comes from the database's row-level security policies,
-// not from hiding this value. To point this deployment at a different Supabase
-// project, just change these two lines and rebuild.
-const DEFAULT_SUPABASE_URL = "https://oovityllspqojxexkrxg.supabase.co";
-const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_xDKo_zVZU606enHf-RtOIw_e_uabv4Y";
-// SECURITY: simple mode grants every anonymous visitor full read/write on all client
-// data. It must never be the default for a publicly reachable deployment. The owner can
-// still turn it on deliberately from Settings for offline testing.
-const DEFAULT_SIMPLE_MODE = false;
-
-let dbPromise = null;
-function getDB() {
-  if (!dbPromise) {
-    dbPromise = openDB(DB_NAME, 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-      },
-    });
-  }
-  return dbPromise;
-}
-
-function getCloudConfig() {
-  try {
-    const raw = window.localStorage.getItem(CLOUD_CONFIG_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.disabled) return null; // person explicitly chose local-only
-      if (parsed && parsed.url && parsed.anonKey) return parsed; // explicit override (e.g. switched modes)
-    }
-  } catch {
-    /* fall through to default below */
-  }
-  if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_ANON_KEY) {
-    return { url: DEFAULT_SUPABASE_URL, anonKey: DEFAULT_SUPABASE_ANON_KEY, simpleMode: DEFAULT_SIMPLE_MODE };
-  }
-  return null;
-}
-function setCloudConfig(cfg) {
-  try {
-    if (cfg) window.localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cfg));
-    else window.localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify({ disabled: true }));
-  } catch (e) {
-    console.error("setCloudConfig failed", e);
-  }
-}
-function isCloudMode() {
-  const cfg = getCloudConfig();
-  return !!(cfg && cfg.url && cfg.anonKey);
-}
-function isSimpleMode() {
-  const cfg = getCloudConfig();
-  return !!(cfg && cfg.simpleMode);
-}
-let _supabaseClient = null;
-function getSupabase() {
-  const cfg = getCloudConfig();
-  if (!cfg || !cfg.url || !cfg.anonKey) return null;
-  if (_supabaseClient && _supabaseClient.__url === cfg.url) return _supabaseClient;
-  _supabaseClient = createClient(cfg.url, cfg.anonKey);
-  _supabaseClient.__url = cfg.url;
-  return _supabaseClient;
-}
-
-async function localGet(key, fallback) {
-  try {
-    const db = await getDB();
-    const v = await db.get(STORE, key);
-    return v !== undefined ? v : fallback;
-  } catch (e) {
-    console.error("localGet failed", key, e);
-    return fallback;
-  }
-}
-async function localSet(key, value) {
-  try {
-    const db = await getDB();
-    await db.put(STORE, value, key);
-    return true;
-  } catch (e) {
-    console.error("localSet failed", key, e);
-    return false;
-  }
-}
-async function localDelete(key) {
-  try {
-    const db = await getDB();
-    await db.delete(STORE, key);
-  } catch (e) {
-    console.error("localDelete failed", key, e);
-  }
-}
-async function localListKeys(prefix) {
-  try {
-    const db = await getDB();
-    const all = await db.getAllKeys(STORE);
-    return all.filter((k) => typeof k === "string" && k.startsWith(prefix));
-  } catch (e) {
-    console.error("localListKeys failed", prefix, e);
-    return [];
-  }
-}
-async function localGetAllEntries() {
-  try {
-    const db = await getDB();
-    const keys = await db.getAllKeys(STORE);
-    const entries = await Promise.all(keys.map(async (k) => [k, await db.get(STORE, k)]));
-    return entries;
-  } catch (e) {
-    console.error("localGetAllEntries failed", e);
-    return [];
-  }
-}
-
-function withTimeout(promise, ms = 8000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
-  ]);
-}
-
-async function cloudGet(key, fallback) {
-  const sb = getSupabase();
-  try {
-    const { data, error } = await withTimeout(sb.from("kv").select("value").eq("key", key).maybeSingle());
-    if (error || !data) return fallback;
-    return data.value;
-  } catch (e) {
-    console.error("cloudGet failed", key, e);
-    return fallback;
-  }
-}
-async function cloudSet(key, value) {
-  const sb = getSupabase();
-  try {
-    const { error } = await withTimeout(sb.from("kv").upsert({ key, value, updated_at: new Date().toISOString() }));
-    return !error;
-  } catch (e) {
-    console.error("cloudSet failed", key, e);
-    return false;
-  }
-}
-async function cloudDelete(key) {
-  const sb = getSupabase();
-  try {
-    await withTimeout(sb.from("kv").delete().eq("key", key));
-  } catch (e) {
-    console.error("cloudDelete failed", key, e);
-  }
-}
-async function cloudListKeys(prefix) {
-  const sb = getSupabase();
-  try {
-    const { data, error } = await withTimeout(sb.from("kv").select("key").like("key", prefix + "%"));
-    if (error || !data) return [];
-    return data.map((r) => r.key);
-  } catch (e) {
-    console.error("cloudListKeys failed", prefix, e);
-    return [];
-  }
-}
-async function cloudGetAllEntries() {
-  const sb = getSupabase();
-  try {
-    const { data, error } = await withTimeout(sb.from("kv").select("key,value"));
-    if (error || !data) return [];
-    return data.map((r) => [r.key, r.value]);
-  } catch (e) {
-    console.error("cloudGetAllEntries failed", e);
-    return [];
-  }
-}
-
-async function storageGet(key, fallback) {
-  return isCloudMode() ? cloudGet(key, fallback) : localGet(key, fallback);
-}
-async function storageSet(key, value) {
-  return isCloudMode() ? cloudSet(key, value) : localSet(key, value);
-}
-async function storageDelete(key) {
-  return isCloudMode() ? cloudDelete(key) : localDelete(key);
-}
-async function storageListKeys(prefix) {
-  return isCloudMode() ? cloudListKeys(prefix) : localListKeys(prefix);
-}
-async function storageGetAllEntries() {
-  return isCloudMode() ? cloudGetAllEntries() : localGetAllEntries();
-}
-
-/* ============================= Cloud profiles (server-enforced roles) =============================
-   Unlike the local-mode "team" list (a plain kv record anyone can edit), profiles in cloud mode
-   live in their own Postgres table with row-level security: a user's own role can only ever be
-   changed by an existing owner, never by themselves. See the SQL script in Settings for the schema. */
-async function fetchMyProfile(userId) {
-  const sb = getSupabase();
-  try {
-    const { data, error } = await withTimeout(sb.from("profiles").select("*").eq("id", userId).maybeSingle());
-    if (error || !data) return null;
-    return data;
-  } catch (e) {
-    console.error("fetchMyProfile failed", e);
-    return null;
-  }
-}
-async function fetchAllProfiles() {
-  const sb = getSupabase();
-  try {
-    const { data, error } = await withTimeout(sb.from("profiles").select("*"));
-    if (error || !data) return [];
-    return data;
-  } catch (e) {
-    console.error("fetchAllProfiles failed", e);
-    return [];
-  }
-}
-async function approveProfile(id, role) {
-  const sb = getSupabase();
-  try {
-    const { error } = await withTimeout(sb.from("profiles").update({ role }).eq("id", id));
-    return !error;
-  } catch (e) {
-    console.error("approveProfile failed", e);
-    return false;
-  }
-}
-
-/* ============================= Permissions =============================
-   One place that answers "may this role do this?". The UI reads from here so a
-   permission is never re-implemented (and quietly diverged) in two components.
-
-   IMPORTANT: this is presentation only. It hides controls a role shouldn't use,
-   it does NOT protect data — a determined user can call the API directly. The
-   real boundary is the Postgres row-level-security policy (see Settings → SQL).
-   Every rule below must have a matching server-side policy. */
-
-const ROLES = {
-  owner:    { label: "مالك المكتب", color: "#BF9000", textOn: "#1F1F1F" },
-  manager:  { label: "مدير مشاريع", color: "#1E7B45", textOn: "#FFFFFF" },
-  engineer: { label: "مهندس",       color: "#2E5395", textOn: "#FFFFFF" },
-  pending:  { label: "بانتظار الموافقة", color: "#B45309", textOn: "#FFFFFF" },
-};
-const ASSIGNABLE_ROLES = ["engineer", "manager", "owner"];
-
-const PERMISSIONS = {
-  viewAllClients:   ["owner", "manager"],
-  editUnitPrice:    ["owner", "manager"],
-  viewCostBasis:    ["owner", "manager"],
-  advanceToSigned:  ["owner", "manager"],
-  deleteClient:     ["owner"],
-  manageTeam:       ["owner"],
-  editClientData:   ["owner", "manager", "engineer"],
-  logSiteVisit:     ["owner", "manager", "engineer"],
-};
-
-function can(member, action) {
-  const allowed = PERMISSIONS[action];
-  if (!allowed) return false;
-  return !!member && allowed.includes(member.role);
-}
-
-function roleLabel(role) {
-  return (ROLES[role] || ROLES.engineer).label;
-}
-
-/* ============================= Brand ============================= */
-const NAVY = "#1F4E78";
-const NAVY_DARK = "#163A57";
-const GOLD = "#BF9000";
-const LIGHT = "#F5F7FA";
-const BORDER = "#E3E7EE";
-const TEXT = "#1F2937";
-const MUTED = "#6B7280";
-
-const LEVELS = ["اقتصادي", "متوسط", "لوكس", "سوبر لوكس"];
-const LEVEL_COLORS = { "اقتصادي": "#6B7280", "متوسط": "#2E5395", "لوكس": "#BF9000", "سوبر لوكس": "#1F1F1F" };
-
-const SCOPES = [
-  "تصميم",
-  "تعديلات معمارية (هدم وبناء)",
-  "التشطيبات المعمارية والتنفيذ",
-  "الكهرباء",
-  "السباكة والتكييف",
-  "الفرش والأثاث",
-];
-
-const STAGES = ["عميل محتمل", "قيد التصميم", "تم التعاقد", "قيد التنفيذ", "تم التسليم"];
-const STAGE_COLORS = {
-  "عميل محتمل": "#9CA3AF",
-  "قيد التصميم": "#2E5395",
-  "تم التعاقد": "#BF9000",
-  "قيد التنفيذ": "#C2410C",
-  "تم التسليم": "#1E7B45",
-};
-
-/* ============================= Item catalogue (mirrors the office BOQ) ============================= */
-// qty(area) returns quantity for a given apartment area in m²
-const ITEMS = [
-  ["تصميم", "رسومات التوزيع المعماري وإعادة توزيع الفراغات الداخلية", "م²", a => a, [20, 35, 55, 80]],
-  ["تصميم", "تصميم ديكور داخلي (Mood Board + لوحات مرجعية)", "م²", a => a, [30, 50, 80, 120]],
-  ["تصميم", "تصميم إنارة (Lighting Layout)", "م²", a => a, [15, 25, 40, 60]],
-  ["تصميم", "مخططات كهروميكانيكال (توزيع الأحمال والنقاط)", "م²", a => a, [15, 25, 35, 50]],
-  ["تصميم", "تصميم ثلاثي الأبعاد 3D Visualization (لكل مشهد)", "مشهد", () => 6, [800, 1200, 2000, 3500]],
-  ["تصميم", "إعداد كتالوج ولوحة الخامات والتشطيبات النهائية", "شقة", () => 1, [1500, 2500, 4000, 6000]],
-
-  ["تعديلات معمارية (هدم وبناء)", "تكسير حوائط طوب داخلية غير إنشائية", "م²", () => 15, [60, 70, 80, 90]],
-  ["تعديلات معمارية (هدم وبناء)", "بناء حوائط طوب جديدة (أحمر/بلوك) شامل المونة", "م²", () => 15, [180, 200, 220, 250]],
-  ["تعديلات معمارية (هدم وبناء)", "فتح فتحات أبواب / شبابيك جديدة بالحوائط", "فتحة", () => 4, [250, 300, 350, 400]],
-  ["تعديلات معمارية (هدم وبناء)", "ردم وتسوية أرضيات تمهيداً للتشطيب", "م²", a => a, [40, 50, 60, 70]],
-  ["تعديلات معمارية (هدم وبناء)", "أعمال عزل مائي للحمامات والمطبخ", "م²", () => 25, [90, 110, 140, 170]],
-  ["تعديلات معمارية (هدم وبناء)", "نقل ورفع مخلفات ومعدات الهدم", "شقة", () => 1, [3000, 4000, 5000, 6000]],
-
-  ["التشطيبات المعمارية والتنفيذ", "أرضيات بورسلين / سيراميك للصالات والغرف", "م²", a => a * 1.05, [350, 550, 850, 1400]],
-  ["التشطيبات المعمارية والتنفيذ", "سيراميك حوائط الحمامات والمطبخ", "م²", () => 40, [250, 380, 550, 800]],
-  ["التشطيبات المعمارية والتنفيذ", "وزرة / سكيرتنج الأرضيات", "متر طولي", a => a * 0.8, [45, 65, 90, 130]],
-  ["التشطيبات المعمارية والتنفيذ", "أسقف جبس بورد عادي", "م²", a => a * 0.5, [220, 280, 350, 450]],
-  ["التشطيبات المعمارية والتنفيذ", "أسقف جبس بورد مفرغ ديكوري", "م²", a => a * 0.15, [320, 420, 550, 750]],
-  ["التشطيبات المعمارية والتنفيذ", "معجون ودهانات حوائط وأسقف (3 أوجه)", "م²", a => a * 3.2, [45, 60, 85, 120]],
-  ["التشطيبات المعمارية والتنفيذ", "أبواب داخلية خشب شامل الكوالين والإكسسوار", "عدد", () => 7, [3500, 5500, 8500, 13000]],
-  ["التشطيبات المعمارية والتنفيذ", "باب رئيسي أمان للشقة", "عدد", () => 1, [6000, 9000, 14000, 22000]],
-  ["التشطيبات المعمارية والتنفيذ", "شبابيك ألوميتال / UPVC مزدوجة الزجاج", "م²", () => 22, [1800, 2400, 3200, 4200]],
-  ["التشطيبات المعمارية والتنفيذ", "وحدات مطبخ خشب شامل الكاونتر", "متر طولي", () => 6, [4500, 7000, 11000, 18000]],
-  ["التشطيبات المعمارية والتنفيذ", "تجهيزات صحية كاملة", "طقم", () => 2, [9000, 15000, 25000, 40000]],
-
-  ["الكهرباء", "تمديد أسلاك ومواسير كهرباء لكل نقطة", "نقطة", () => 90, [180, 220, 260, 320]],
-  ["الكهرباء", "لوحة توزيع رئيسية وفرعية", "عدد", () => 1, [2500, 3500, 5000, 7500]],
-  ["الكهرباء", "تركيب إنارة (سبوت لايت / ليست جبس)", "نقطة", () => 45, [90, 140, 220, 350]],
-  ["الكهرباء", "مفاتيح وبرايز فئة عالية", "عدد", () => 70, [60, 110, 180, 300]],
-  ["الكهرباء", "تأريض ومانع صواعق", "شقة", () => 1, [1500, 2200, 3000, 4000]],
-
-  ["السباكة والتكييف", "تمديد مواسير مياه باردة وساخنة PPR", "نقطة", () => 20, [220, 280, 350, 450]],
-  ["السباكة والتكييف", "تمديد صرف صحي PVC", "نقطة", () => 14, [250, 320, 400, 500]],
-  ["السباكة والتكييف", "سخان مياه كهربائي / غاز", "عدد", () => 2, [3500, 5000, 7500, 11000]],
-  ["السباكة والتكييف", "تكييف سبليت توريد وتركيب", "عدد", () => 4, [14000, 18000, 24000, 32000]],
-  ["السباكة والتكييف", "عزل مواسير التكييف والصرف", "متر طولي", () => 30, [40, 55, 75, 100]],
-
-  ["الفرش والأثاث", "غرفة معيشة كاملة", "شقة", () => 1, [45000, 75000, 130000, 220000]],
-  ["الفرش والأثاث", "غرفة نوم رئيسية كاملة", "غرفة", () => 1, [60000, 95000, 160000, 280000]],
-  ["الفرش والأثاث", "غرف نوم إضافية / أطفال", "غرفة", () => 2, [35000, 55000, 90000, 150000]],
-  ["الفرش والأثاث", "غرفة سفرة", "شقة", () => 1, [25000, 40000, 70000, 120000]],
-  ["الفرش والأثاث", "أجهزة مطبخ", "شقة", () => 1, [35000, 55000, 90000, 150000]],
-  ["الفرش والأثاث", "ستائر وموكيت وسجاد", "شقة", () => 1, [20000, 32000, 50000, 85000]],
-  ["الفرش والأثاث", "إكسسوارات وإضاءة ديكورية", "شقة", () => 1, [8000, 14000, 22000, 35000]],
-];
-
-/* Indicative material/type specification per finishing level, for the items where the
-   type of material meaningfully changes look, feel, and durability across tiers. */
-const SPECS = {
-  "أرضيات بورسلين / سيراميك للصالات والغرف": ["بورسلين محلي 60×60 سم", "بورسلين مستورد 80×80 سم", "بورسلين إيطالي كبير المقاس / رخام طبيعي مختار", "رخام طبيعي نادر (كالاكاتا / ستاتواريو)"],
-  "سيراميك حوائط الحمامات والمطبخ": ["سيراميك محلي لامع", "سيراميك مستورد مطفي", "بورسلين حوائط كبير المقاس", "رخام / حجر طبيعي للحوائط"],
-  "أسقف جبس بورد عادي": ["جبس بورد مسطح بسيط بدون تعرجات", "جبس بورد بكسرات بسيطة وإضاءة جزئية", "جبس بورد مفرغ بالكامل بإضاءة معمارية", "تصميم جبسي متعدد المستويات بالكامل"],
-  "معجون ودهانات حوائط وأسقف (3 أوجه)": ["دهان بلاستيك مطفي اقتصادي", "دهان سيمي جلوس + حائط مميز (Feature Wall)", "دهان فاخر مستورد قابل للغسيل", "دهان صديق للبيئة عالي الأداء + تأثيرات ديكورية (Venetian Plaster)"],
-  "أبواب داخلية خشب شامل الكوالين والإكسسوار": ["خشب مضغوط (MDF) بدهان رش", "خشب زان أو صاج بديل خشب", "خشب طبيعي مصمت بمقابض فاخرة", "خشب مصمت عازل للصوت بتشطيب يدوي"],
-  "باب رئيسي أمان للشقة": ["باب أمان اقتصادي طبقة واحدة", "باب أمان مقاوم للحريق طبقتين", "باب أمان مستورد بمقبض فاخر", "باب أمان فاخر بتصميم مخصص + قفل بصمة ذكي"],
-  "شبابيك ألوميتال / UPVC مزدوجة الزجاج": ["ألوميتال عادي بزجاج مفرد", "ألوميتال / UPVC بزجاج مزدوج عازل", "UPVC ألماني عازل حراري وصوتي", "نظام عزل صوتي كامل + زجاج ذكي متغير الشفافية"],
-  "وحدات مطبخ خشب شامل الكاونتر": ["ميلامين + كاونتر جرانيت محلي", "أكريليك + كاونتر كوارتز", "لاكيه لامع + كاونتر كوارتز مستورد", "خشب طبيعي مصمت + كاونتر جرانيت / رخام فاخر"],
-  "تجهيزات صحية كاملة": ["تجهيزات محلية اقتصادية", "تجهيزات محلية فئة أولى (Ideal Standard)", "تجهيزات مستوردة (Grohe / Duravit)", "تجهيزات فاخرة (Kohler / Villeroy & Boch) + خلاطات ذكية"],
-  "تركيب إنارة (سبوت لايت / ليست جبس)": ["سبوت لايت عادي", "سبوت لايت LED + ليست جبس بسيط", "إضاءة معمارية موجهة بدرجة حرارة لون متحكم بها", "نظام إضاءة ذكي متكامل (Smart Lighting)"],
-  "مفاتيح وبرايز فئة عالية": ["مفاتيح تجارية محلية", "مفاتيح Schneider / MK", "مفاتيح Legrand / ABB", "مفاتيح Gira / JUNG بتحكم لمسي ذكي"],
-  "تكييف سبليت توريد وتركيب": ["سبليت تجاري محلي", "سبليت فئة تجارية جيدة (Midea / Carrier)", "سبليت انفرتر موفر للطاقة (LG / Samsung)", "تكييف مركزي (دكت) بتحكم مركزي ذكي"],
-};
-
-const fmt = (n) => Math.round(n).toLocaleString("en-US");
-
-const DEFAULT_SETTINGS = { supervisionPct: 0.08, contingencyPct: 0.05, vatPct: 0.14 };
-
-function newClient() {
-  const id = "c" + Date.now() + Math.floor(Math.random() * 1000);
-  return {
-    id,
-    name: "",
-    phone: "",
-    address: "",
-    area: 150,
-    stage: "عميل محتمل",
-    style: "",
-    notes: "",
-    createdAt: new Date().toISOString().slice(0, 10),
-    folderLink: "",
-    engineer: "",
-    progressPercent: 0,
-    lastVisitAt: "",
-    scopeLevel: Object.fromEntries(SCOPES.map(s => [s, "متوسط"])),
-    scopeIncluded: Object.fromEntries(SCOPES.map(s => [s, s !== "الفرش والأثاث"])),
-    itemLevel: {},      // { [itemName]: level } — overrides the scope's default level for one specific item
-    itemIncluded: {},   // { [itemName]: boolean } — overrides the scope's include/exclude for one item
-    itemQty: {},        // { [itemName]: number } — overrides the formula-computed quantity for one item
-    itemPrice: {},       // { [itemName]: number } — overrides the catalogue unit price (market price changed)
-    itemPriceDate: {},   // { [itemName]: "YYYY-MM-DD" } — when that price override was set, for audit purposes
-  };
-}
-
-/* Resolve one catalogue item's effective state for a given client — this is the single
-   source of truth used everywhere (live totals, the editable BOQ table, and every export)
-   so per-item overrides always stay consistent across the whole app. */
-function resolveItem(client, item, area) {
-  const [scope, name, unit, qtyFn, prices] = item;
-  const itemIncluded = client.itemIncluded || {};
-  const itemLevel = client.itemLevel || {};
-  const itemQty = client.itemQty || {};
-  const itemPrice = client.itemPrice || {};
-  const itemPriceDate = client.itemPriceDate || {};
-  const included = Object.prototype.hasOwnProperty.call(itemIncluded, name)
-    ? itemIncluded[name] : client.scopeIncluded[scope];
-  const level = itemLevel[name] || client.scopeLevel[scope] || "متوسط";
-  const levelIdx = LEVELS.indexOf(level);
-  const hasQtyOverride = Object.prototype.hasOwnProperty.call(itemQty, name) && itemQty[name] !== "" && itemQty[name] !== null && itemQty[name] !== undefined;
-  const qty = hasQtyOverride ? Number(itemQty[name]) : qtyFn(area);
-  const basePrice = prices[levelIdx];
-  const hasPriceOverride = Object.prototype.hasOwnProperty.call(itemPrice, name) && itemPrice[name] !== "" && itemPrice[name] !== null && itemPrice[name] !== undefined;
-  const price = hasPriceOverride ? Number(itemPrice[name]) : basePrice;
-  return {
-    scope, name, unit, included, level, levelIdx, qty, price, basePrice,
-    total: included ? qty * price : 0,
-    hasQtyOverride, hasPriceOverride, isCustomLevel: !!itemLevel[name],
-    priceDate: itemPriceDate[name] || "",
-  };
-}
-
-/* ============================= Site visit log (work-progress tracking) ============================= */
-function newVisit(clientId) {
-  return {
-    id: "v" + Date.now() + Math.floor(Math.random() * 1000),
-    clientId,
-    date: new Date().toISOString().slice(0, 10),
-    engineer: "",
-    percent: 0,
-    notes: "",
-    photoLink: "",
-    createdAt: new Date().toISOString(),
-  };
-}
-async function loadVisits(clientId) {
-  const keys = await storageListKeys(`visit:${clientId}:`);
-  const visits = [];
-  for (const k of keys) {
-    const v = await storageGet(k, null);
-    if (v) visits.push(v);
-  }
-  visits.sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || "").localeCompare(a.createdAt || ""));
-  return visits;
-}
-async function saveVisit(visit) {
-  await storageSet(`visit:${visit.clientId}:${visit.id}`, visit);
-}
-async function deleteVisitEntry(clientId, id) {
-  await storageDelete(`visit:${clientId}:${id}`);
-}
-
-/* ============================= Payment schedule (mirrors office contract) ============================= */
-const PAYMENT_STAGES = [
-  { pct: 0.20, label: "دفعة مقدمة عند توقيع العقد" },
-  { pct: 0.20, label: "بعد استلام الخامات وبدء أعمال الهدم والبناء" },
-  { pct: 0.30, label: "بعد الانتهاء من التشطيبات الأساسية (أرضيات، حوائط، أسقف)" },
-  { pct: 0.20, label: "بعد الانتهاء من التركيبات النهائية (أبواب، كهرباء، سباكة، مطبخ وحمامات)" },
-  { pct: 0.10, label: "عند التسليم النهائي والمعاينة المشتركة" },
-];
-
-function rtlP(opts) { return new Paragraph({ bidirectional: true, alignment: AlignmentType.RIGHT, ...opts }); }
-function rtlR(text, opts = {}) { return new TextRun({ text, rightToLeft: true, font: "Arial", ...opts }); }
-function docH1(text) {
-  return rtlP({
-    spacing: { before: 320, after: 150 },
-    shading: { type: ShadingType.CLEAR, fill: "1F4E78" },
-    children: [rtlR(text, { bold: true, color: "FFFFFF", size: 24 })],
-  });
-}
-function docBody(text, opts = {}) {
-  return rtlP({ spacing: { after: 160 }, children: [rtlR(text, { size: 21, ...opts })] });
-}
-function docCell(text, w, opts = {}) {
-  return new TableCell({
-    width: { size: w, type: WidthType.DXA },
-    verticalAlign: VerticalAlign.CENTER,
-    shading: opts.fill ? { type: ShadingType.CLEAR, fill: opts.fill } : undefined,
-    margins: { top: 100, bottom: 100, left: 120, right: 120 },
-    children: [rtlP({ alignment: opts.align || AlignmentType.RIGHT, children: [rtlR(text, { size: 20, bold: !!opts.bold, color: opts.color || "000000" })] })],
-  });
-}
-const DOC_BORDERS = {
-  top: { style: BorderStyle.SINGLE, size: 2, color: "D8DEE7" },
-  bottom: { style: BorderStyle.SINGLE, size: 2, color: "D8DEE7" },
-  left: { style: BorderStyle.SINGLE, size: 2, color: "D8DEE7" },
-  right: { style: BorderStyle.SINGLE, size: 2, color: "D8DEE7" },
-  insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: "D8DEE7" },
-  insideVertical: { style: BorderStyle.SINGLE, size: 2, color: "D8DEE7" },
-};
-const PAGE_W = 11906, PAGE_H = 16838, MARGIN = 850;
-const CONTENT_W = PAGE_W - 2 * MARGIN;
-
-function generateContractDocx(client, calc) {
-  const today = new Date().toLocaleDateString("ar-EG");
-  const children = [];
-
-  children.push(new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: { after: 300 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: "BF9000" } },
-    children: [rtlR("عقد تنفيذ أعمال تشطيب وديكور", { bold: true, size: 38, color: "1F4E78" })],
-  }));
-
-  children.push(docH1("أطراف التعاقد"));
-  children.push(docBody(`إنه في يوم ${today}، تم الاتفاق بين كل من:`));
-  children.push(docBody('الطرف الأول: مكتب __________ للاستشارات المعمارية (ويشار إليه بـ "المكتب").', { bold: true }));
-  children.push(docBody(`الطرف الثاني: ${client.name || "__________"}، مقيم بـ ${client.address || "__________"} (ويشار إليه بـ "العميل").`, { bold: true }));
-
-  children.push(docH1("أولاً: نطاق العمل"));
-  children.push(docBody(`يلتزم المكتب بتنفيذ أعمال التصميم والتشطيب لشقة العميل بمساحة تقريبية ${client.area} م²، وفقاً للمقايسة التفصيلية المعتمدة والموقعة من الطرفين والمرفقة بهذا العقد.`));
-
-  children.push(docH1("ثانياً: قيمة العقد"));
-  children.push(docBody(`القيمة الإجمالية لهذا العقد شاملة الضريبة: ${fmt(calc.grandTotal)} جنيهاً مصرياً.`, { bold: true }));
-
-  children.push(docH1("ثالثاً: جدول الدفعات"));
-  const w = [Math.round(CONTENT_W * 0.08), Math.round(CONTENT_W * 0.50), Math.round(CONTENT_W * 0.14), 0];
-  w[3] = CONTENT_W - w[0] - w[1] - w[2];
-  const payRows = PAYMENT_STAGES.map((p, i) => new TableRow({ children: [
-    docCell(String(i + 1), w[0], { align: AlignmentType.CENTER, bold: true, fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-    docCell(p.label, w[1], { fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-    docCell((p.pct * 100).toFixed(0) + "%", w[2], { align: AlignmentType.CENTER, bold: true, fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-    docCell(fmt(calc.grandTotal * p.pct) + " ج.م", w[3], { align: AlignmentType.CENTER, fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-  ]}));
-  children.push(new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: w,
-    borders: DOC_BORDERS,
-    rows: [
-      new TableRow({ tableHeader: true, children: [
-        docCell("م", w[0], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
-        docCell("المرحلة", w[1], { fill: "1F4E78", bold: true, color: "FFFFFF" }),
-        docCell("النسبة", w[2], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
-        docCell("القيمة", w[3], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
-      ]}),
-      ...payRows,
-    ],
-  }));
-  children.push(new Paragraph({ spacing: { before: 150 }, children: [] }));
-  children.push(docBody("تُسدد كل دفعة خلال مدة أقصاها 3 أيام عمل من تاريخ إخطار العميل باكتمال المرحلة المرتبطة بها.", { italics: true, color: "6B7280" }));
-
-  children.push(docH1("رابعاً: مدة التنفيذ"));
-  children.push(docBody("مدة التنفيذ الإجمالية __________ يوم عمل من تاريخ استلام الموقع وتحصيل الدفعة المقدمة."));
-
-  children.push(docH1("خامساً: الضمانات وفسخ العقد"));
-  children.push(docBody("يلتزم المكتب بضمان أعمال التنفيذ وفقاً للمدد الموضحة في نموذج الاستلام والتسليم النهائي المرفق. يحق لأي من الطرفين فسخ هذا العقد في حال إخلال الطرف الآخر بأي من بنوده الجوهرية بعد إنذار كتابي ومهلة 15 يوماً لتصحيح الوضع."));
-
-  children.push(new Paragraph({ spacing: { before: 400 }, children: [] }));
-  const half = Math.round(CONTENT_W / 2);
-  children.push(new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: [half, CONTENT_W - half],
-    borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } },
-    rows: [new TableRow({ children: [
-      new TableCell({ width: { size: half, type: WidthType.DXA }, children: [
-        rtlP({ children: [rtlR("الطرف الأول (المكتب)", { bold: true, size: 21 })] }),
-        rtlP({ spacing: { before: 400 }, children: [rtlR("الاسم: __________", { size: 21 })] }),
-        rtlP({ spacing: { before: 200 }, children: [rtlR("التوقيع: __________", { size: 21 })] }),
-      ]}),
-      new TableCell({ width: { size: CONTENT_W - half, type: WidthType.DXA }, children: [
-        rtlP({ children: [rtlR("الطرف الثاني (العميل)", { bold: true, size: 21 })] }),
-        rtlP({ spacing: { before: 400 }, children: [rtlR(`الاسم: ${client.name || "__________"}`, { size: 21 })] }),
-        rtlP({ spacing: { before: 200 }, children: [rtlR("التوقيع: __________", { size: 21 })] }),
-      ]}),
-    ]})],
-  }));
-
-  return new Document({
-    sections: [{
-      properties: { page: { size: { width: PAGE_W, height: PAGE_H }, margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } } },
-      headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [rtlR("عقد تنفيذ أعمال تشطيب وديكور", { size: 16, color: "6B7280" })] })] }) },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: ["صفحة ", PageNumber.CURRENT, " من ", PageNumber.TOTAL_PAGES], size: 16, color: "6B7280", font: "Arial" })] })] }) },
-      children,
-    }],
-  });
-}
-
-async function downloadDocx(filename, doc) {
-  const blob = await Packer.toBlob(doc);
-  saveAs(blob, filename);
-}
-
-/* ============================= Live PPTX generation =============================
-   Generates a presentation directly from the current client + catalogue data, every
-   time it's requested — so it can never drift out of sync with the system's numbers. */
-const MOOD = {
-  "اقتصادي": { floor: "E5E0D8", floorVein: "CFC8BC", wall: "D9D9D9", wood: "C9A876", woodGrain: "B08F5C", metal: "B0B0B0", metalAccent: "8C8C8C", texture: "tile" },
-  "متوسط": { floor: "D8C9B0", floorVein: "C0AD8A", wall: "6E97A8", wood: "A97C50", woodGrain: "8A6038", metal: "C9A227", metalAccent: "A9861B", texture: "tile" },
-  "لوكس": { floor: "EDEAE3", floorVein: "C9A227", wall: "2E4A66", wood: "6B4226", woodGrain: "4A2C18", metal: "D4AF37", metalAccent: "A9861B", texture: "marble" },
-  "سوبر لوكس": { floor: "2B2B2B", floorVein: "BF9000", wall: "17181A", wood: "3E2723", woodGrain: "241512", metal: "E8C86E", metalAccent: "BF9000", texture: "marble" },
-};
-
-function pptxMoodPanel(s, x, y, w, h, levelKey, accentColor) {
-  const m = MOOD[levelKey];
-  s.addShape("roundRect", { x, y, w, h, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: accentColor, width: 2 } });
-  const rows = [
-    { label: "الأرضيات", color: m.floor, vein: m.floorVein, kind: m.texture },
-    { label: "الحوائط", color: m.wall, vein: null, kind: "solid" },
-    { label: "الأبواب والأخشاب", color: m.wood, vein: m.woodGrain, kind: "wood" },
-    { label: "التجهيزات والإضاءة", color: m.metal, vein: m.metalAccent, kind: "metal" },
-  ];
-  const padTop = 0.15, gap = 0.1;
-  const rowH = (h - padTop - 0.1 - gap * 3) / 4;
-  let ry = y + padTop;
-  rows.forEach((row) => {
-    const rx = x + 0.12, rw = w - 0.24;
-    s.addShape("roundRect", { x: rx, y: ry, w: rw, h: rowH, rectRadius: 0.04, fill: { color: row.color }, line: { color: "E3E7EE", width: 0.5 } });
-    if (row.kind === "tile") {
-      for (let i = 1; i < 4; i++) s.addShape("line", { x: rx + (rw / 4) * i, y: ry, w: 0, h: rowH, line: { color: row.vein, width: 0.75, transparency: 30 } });
-      s.addShape("line", { x: rx, y: ry + rowH / 2, w: rw, h: 0, line: { color: row.vein, width: 0.75, transparency: 30 } });
-    } else if (row.kind === "marble") {
-      s.addShape("line", { x: rx + rw * 0.1, y: ry + rowH * 0.15, w: rw * 0.6, h: rowH * 0.55, line: { color: row.vein, width: 1.25, transparency: 15 } });
-      s.addShape("line", { x: rx + rw * 0.35, y: ry + rowH * 0.75, w: rw * 0.45, h: -rowH * 0.5, line: { color: row.vein, width: 1, transparency: 30 } });
-    } else if (row.kind === "wood") {
-      for (let i = 1; i < 4; i++) s.addShape("line", { x: rx, y: ry + (rowH / 4) * i, w: rw, h: 0, line: { color: row.vein, width: 0.75, transparency: 35 } });
-    } else if (row.kind === "metal") {
-      for (let i = 0; i < 3; i++) s.addShape("ellipse", { x: rx + 0.08 + i * (rw / 3), y: ry + rowH * 0.2, w: rowH * 0.6, h: rowH * 0.6, fill: { color: row.vein, transparency: 55 }, line: { type: "none" } });
-    }
-    s.addText(row.label, { x: rx, y: ry + rowH - 0.24, w: rw, h: 0.22, fontFace: "Arial", fontSize: 8, bold: true, color: row.kind === "metal" || levelKey === "سوبر لوكس" ? "FFFFFF" : "1F1F1F", align: "center", valign: "bottom", rtlMode: true });
-    ry += rowH + gap;
-  });
-}
-
-async function buildAndDownloadClientPptx(client, calc, settings) {
-  const p = new pptxgen();
-  p.layout = "LAYOUT_WIDE";
-  p.rtlMode = true;
-  const NAVY_ = "1F4E78", NAVY_DARK_ = "132E45", GOLD_ = "BF9000", LIGHT_ = "F5F7FA", MUTED_ = "6B7280";
-  const LEVEL_COLOR = { "اقتصادي": "6B7280", "متوسط": "2E5395", "لوكس": "BF9000", "سوبر لوكس": "1F1F1F" };
-
-  // Slide 1 — Cover
-  {
-    const s = p.addSlide();
-    s.background = { color: NAVY_ };
-    s.addShape("ellipse", { x: 9.8, y: -2.2, w: 7, h: 7, fill: { color: NAVY_DARK_ }, line: { type: "none" } });
-    s.addText(`عرض تشطيب مخصص`, { x: 1, y: 2.5, w: 11.33, h: 1, fontFace: "Arial", fontSize: 34, bold: true, color: "FFFFFF", align: "center", rtlMode: true });
-    s.addText(client.name || "عميل", { x: 1, y: 3.4, w: 11.33, h: 0.7, fontFace: "Arial", fontSize: 22, color: GOLD_, align: "center", rtlMode: true });
-    s.addText(`${client.address || ""}   |   ${client.area} م²   |   ${new Date().toLocaleDateString("ar-EG")}`, { x: 1, y: 4.2, w: 11.33, h: 0.5, fontFace: "Arial", fontSize: 13, italic: true, color: "D9E1F2", align: "center", rtlMode: true });
-    s.addText("مكتب __________ للاستشارات المعمارية", { x: 1, y: 6.6, w: 11.33, h: 0.4, fontFace: "Arial", fontSize: 11, color: "AEB9C6", align: "center", rtlMode: true });
-  }
-
-  // Slide 2 — Chosen level per scope
-  {
-    const s = p.addSlide();
-    s.background = { color: LIGHT_ };
-    s.addText("المستوى المختار لكل نطاق عمل", { x: 0.6, y: 0.4, w: 12, h: 0.55, fontFace: "Arial", fontSize: 24, bold: true, color: NAVY_, align: "right", rtlMode: true });
-    let y = 1.4;
-    SCOPES.forEach((scope) => {
-      const included = client.scopeIncluded[scope];
-      const level = client.scopeLevel[scope] || "متوسط";
-      const color = included ? LEVEL_COLOR[level] : "9CA3AF";
-      s.addShape("roundRect", { x: 0.6, y, w: 12.1, h: 0.68, rectRadius: 0.05, fill: { color: "FFFFFF" }, line: { color: "E3E7EE", width: 1 } });
-      s.addShape("roundRect", { x: 0.6, y, w: 0.09, h: 0.68, fill: { color }, line: { type: "none" } });
-      s.addText(scope, { x: 6.6, y: y + 0.05, w: 5.9, h: 0.58, fontFace: "Arial", fontSize: 13, bold: true, color: "1F2937", align: "right", rtlMode: true, valign: "middle" });
-      s.addShape("roundRect", { x: 4.9, y: y + 0.12, w: 1.5, h: 0.44, rectRadius: 0.06, fill: { color }, line: { type: "none" } });
-      s.addText(included ? level : "غير مُضمَّن", { x: 4.9, y: y + 0.12, w: 1.5, h: 0.44, fontFace: "Arial", fontSize: 11, bold: true, color: "FFFFFF", align: "center", valign: "middle", rtlMode: true });
-      s.addText(included ? `${fmt(calc.byScope[scope])} ج.م` : "—", { x: 0.75, y: y + 0.05, w: 3.9, h: 0.58, fontFace: "Arial", fontSize: 13, bold: true, color: NAVY_, align: "left", valign: "middle" });
-      y += 0.85;
-    });
-  }
-
-  // Slide 3 — Mood board reference for the levels actually chosen (unique set)
-  {
-    const s = p.addSlide();
-    s.background = { color: LIGHT_ };
-    s.addText("لوحة الخامات الاستدلالية للمستويات المختارة", { x: 0.6, y: 0.4, w: 12, h: 0.55, fontFace: "Arial", fontSize: 22, bold: true, color: NAVY_, align: "right", rtlMode: true });
-    const chosenLevels = [...new Set(SCOPES.filter(s2 => client.scopeIncluded[s2]).map(s2 => client.scopeLevel[s2] || "متوسط"))];
-    const list = chosenLevels.length ? chosenLevels : ["متوسط"];
-    const panelW = 2.9, gap = 0.25, startX = (13.33 - (list.length * panelW + (list.length - 1) * gap)) / 2, panelY = 1.5, panelH = 5.0;
-    list.forEach((lv, i) => {
-      const x = startX + i * (panelW + gap);
-      s.addText(lv, { x, y: panelY - 0.4, w: panelW, h: 0.35, fontFace: "Arial", fontSize: 14, bold: true, color: LEVEL_COLOR[lv], align: "center", rtlMode: true });
-      pptxMoodPanel(s, x, panelY, panelW, panelH, lv, LEVEL_COLOR[lv]);
-    });
-  }
-
-  // Slide 4 — Price summary
-  {
-    const s = p.addSlide();
-    s.background = { color: NAVY_ };
-    s.addText("ملخص السعر النهائي", { x: 0.6, y: 0.5, w: 12, h: 0.6, fontFace: "Arial", fontSize: 26, bold: true, color: "FFFFFF", align: "right", rtlMode: true });
-    const lines = [
-      ["إجمالي بنود التنفيذ", calc.execTotal],
-      ["أتعاب الإشراف الهندسي", calc.supervision],
-      ["احتياطي أعمال غير منظورة", calc.contingency],
-      ["التصميم", calc.byScope["تصميم"]],
-      ["الفرش والأثاث", calc.byScope["الفرش والأثاث"]],
-      ["ضريبة القيمة المضافة", calc.vat],
-    ];
-    let y = 1.5;
-    lines.forEach(([label, val]) => {
-      s.addText(label, { x: 0.8, y, w: 7, h: 0.45, fontFace: "Arial", fontSize: 14, color: "D9E1F2", align: "right", rtlMode: true });
-      s.addText(fmt(val) + " ج.م", { x: 8, y, w: 4.5, h: 0.45, fontFace: "Arial", fontSize: 14, bold: true, color: "FFFFFF", align: "left" });
-      y += 0.55;
-    });
-    s.addShape("roundRect", { x: 0.8, y: y + 0.2, w: 11.7, h: 0.9, rectRadius: 0.08, fill: { color: GOLD_ }, line: { type: "none" } });
-    s.addText("الإجمالي النهائي المستحق", { x: 1, y: y + 0.2, w: 7, h: 0.9, fontFace: "Arial", fontSize: 17, bold: true, color: "1F1F1F", align: "right", valign: "middle", rtlMode: true });
-    s.addText(fmt(calc.grandTotal) + " ج.م", { x: 8, y: y + 0.2, w: 4.3, h: 0.9, fontFace: "Arial", fontSize: 20, bold: true, color: "1F1F1F", align: "left", valign: "middle" });
-  }
-
-  await p.writeFile({ fileName: `عرض_${client.name || "عميل"}.pptx` });
-}
-
-/* ============================= Calculation ============================= */
-function calcClient(client, settings) {
-  const area = Number(client.area) || 0;
-  const byScope = {};
-  SCOPES.forEach(s => (byScope[s] = 0));
-  ITEMS.forEach((item) => {
-    const r = resolveItem(client, item, area);
-    byScope[r.scope] += r.total;
-  });
-  const execScopes = ["تعديلات معمارية (هدم وبناء)", "التشطيبات المعمارية والتنفيذ", "الكهرباء", "السباكة والتكييف"];
-  const execTotal = execScopes.reduce((sum, s) => sum + byScope[s], 0);
-  const supervision = execTotal * settings.supervisionPct;
-  const contingency = (execTotal + supervision) * settings.contingencyPct;
-  const execWithExtras = execTotal + supervision + contingency;
-  const subtotal = execWithExtras + byScope["تصميم"] + byScope["الفرش والأثاث"];
-  const vat = subtotal * settings.vatPct;
-  const grandTotal = subtotal + vat;
-  return { byScope, execTotal, supervision, contingency, execWithExtras, subtotal, vat, grandTotal };
-}
-
-/* ============================= Excel styling constants (ExcelJS) ============================= */
-const XL_NAVY = "FF1F4E78";
-const XL_GOLD = "FFBF9000";
-const XL_LIGHT = "FFF5F7FA";
-const XL_WHITE = "FFFFFFFF";
-const XL_BORDER_COLOR = "FFD8DEE7";
-const xlThinBorder = { style: "thin", color: { argb: XL_BORDER_COLOR } };
-const xlAllBorders = { top: xlThinBorder, bottom: xlThinBorder, left: xlThinBorder, right: xlThinBorder };
-
-function xlHeaderCell(cell, text) {
-  cell.value = text;
-  cell.font = { name: "Arial", bold: true, color: { argb: XL_WHITE }, size: 11 };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_NAVY } };
-  cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  cell.border = xlAllBorders;
-}
-function xlDataCell(cell, value, opts = {}) {
-  cell.value = value;
-  cell.font = { name: "Arial", bold: !!opts.bold, color: { argb: opts.color || "FF1F2937" }, size: 10.5 };
-  if (opts.fill) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: opts.fill } };
-  cell.alignment = { horizontal: opts.align || "right", vertical: "middle", wrapText: true };
-  cell.border = xlAllBorders;
-  if (opts.numFmt) cell.numFmt = opts.numFmt;
-}
-async function saveWorkbook(wb, filename) {
-  const buffer = await wb.xlsx.writeBuffer();
-  saveAs(new Blob([buffer], { type: "application/octet-stream" }), filename);
-}
-
-async function exportFullBOQ(client, settings) {
-  const calc = calcClient(client, settings);
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("المقايسة التفصيلية", { views: [{ rightToLeft: true }] });
-  ws.columns = [
-    { width: 4 }, { width: 40 }, { width: 9 }, { width: 9 },
-    { width: 12 }, { width: 12 }, { width: 9 }, { width: 13 }, { width: 34 },
-  ];
-
-  ws.mergeCells("A1:I1");
-  const title = ws.getCell("A1");
-  title.value = `المقايسة التفصيلية — ${client.name || "عميل"}`;
-  title.font = { name: "Arial", bold: true, size: 15, color: { argb: XL_WHITE } };
-  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_NAVY } };
-  title.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(1).height = 26;
-
-  ws.mergeCells("A2:I2");
-  const sub = ws.getCell("A2");
-  sub.value = `العنوان: ${client.address || "—"}    |    المساحة: ${client.area} م²    |    التاريخ: ${new Date().toLocaleDateString("ar-EG")}    |    * = بند بمستوى/كمية/سعر مخصص يدويًا`;
-  sub.font = { name: "Arial", italic: true, size: 10, color: { argb: "FF6B7280" } };
-  sub.alignment = { horizontal: "center" };
-
-  const headerRow = 4;
-  const headers = ["م", "البند", "الوحدة", "الكمية", "المستوى المطبق", "سعر الوحدة", "مُضمَّن؟", "الإجمالي (ج.م)", "المواصفة / النوع المقترح"];
-  headers.forEach((h, i) => xlHeaderCell(ws.getRow(headerRow).getCell(i + 1), h));
-  ws.getRow(headerRow).height = 22;
-
-  const SCOPE_FILL = {
-    "تصميم": "FF7030A0",
-    "تعديلات معمارية (هدم وبناء)": "FF833C00",
-    "التشطيبات المعمارية والتنفيذ": "FF1F4E78",
-    "الكهرباء": "FFBF9000",
-    "السباكة والتكييف": "FF0B5394",
-    "الفرش والأثاث": "FF38761D",
-  };
-
-  let r = headerRow + 1;
-  let idx = 1;
-  let currentScope = null;
-  const firstDataRow = r;
-  const scopeSubtotalRows = [];
-  let scopeRunningTotal = 0;
-  let scopeStartRow = r;
-
-  const closeScopeIfOpen = () => {
-    if (currentScope === null) return;
-    ws.mergeCells(`A${r}:G${r}`);
-    const lc = ws.getCell(`A${r}`);
-    lc.value = `إجمالي — ${currentScope}`;
-    lc.font = { name: "Arial", bold: true, size: 10.5, color: { argb: "FF1F2937" } };
-    lc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
-    lc.alignment = { horizontal: "right", vertical: "middle" };
-    ws.mergeCells(`H${r}:I${r}`);
-    const vc = ws.getCell(`H${r}`);
-    vc.value = Math.round(scopeRunningTotal);
-    vc.numFmt = '#,##0 "ج.م"';
-    vc.font = { name: "Arial", bold: true, size: 10.5 };
-    vc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
-    vc.alignment = { horizontal: "center", vertical: "middle" };
-    r++;
-  };
-
-  ITEMS.forEach((item) => {
-    const [scope, name, unit] = item;
-    if (scope !== currentScope) {
-      closeScopeIfOpen();
-      scopeRunningTotal = 0;
-      currentScope = scope;
-      ws.mergeCells(`A${r}:I${r}`);
-      const hc = ws.getCell(`A${r}`);
-      hc.value = `◆ ${scope}`;
-      hc.font = { name: "Arial", bold: true, size: 11, color: { argb: XL_WHITE } };
-      hc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SCOPE_FILL[scope] || XL_NAVY } };
-      hc.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-      ws.getRow(r).height = 20;
-      r++;
-    }
-
-    const resolved = resolveItem(client, item, Number(client.area) || 0);
-    const { included, level, levelIdx, qty, price } = resolved;
-    const total = Math.round(resolved.total);
-    if (included) scopeRunningTotal += total;
-    const fill = idx % 2 ? XL_WHITE : XL_LIGHT;
-    const spec = SPECS[name] ? SPECS[name][levelIdx] : "—";
-    const row = ws.getRow(r);
-    xlDataCell(row.getCell(1), idx, { fill, align: "center" });
-    xlDataCell(row.getCell(2), name + (resolved.isCustomLevel || resolved.hasQtyOverride || resolved.hasPriceOverride ? " *" : ""), { fill });
-    xlDataCell(row.getCell(3), unit, { fill, align: "center" });
-    xlDataCell(row.getCell(4), Math.round(qty * 100) / 100, { fill, align: "center" });
-    xlDataCell(row.getCell(5), level, { fill, align: "center" });
-    xlDataCell(row.getCell(6), price, { fill, align: "center", numFmt: "#,##0" });
-    xlDataCell(row.getCell(7), included ? "نعم" : "لا", { fill, align: "center", bold: true, color: included ? "FF1E7B45" : "FFC00000" });
-    xlDataCell(row.getCell(8), total, { fill, align: "center", bold: true, numFmt: '#,##0 "ج.م"' });
-    xlDataCell(row.getCell(9), spec, { fill: "FFFFF7E6", color: "FF1F4E78" });
-    idx++; r++;
-  });
-  closeScopeIfOpen();
-  const lastDataRow = r - 1;
-
-  const summaryLines = [
-    ["إجمالي بنود التنفيذ", calc.execTotal],
-    ["أتعاب الإشراف الهندسي", calc.supervision],
-    ["احتياطي أعمال غير منظورة", calc.contingency],
-    ["الإجمالي قبل الضريبة", calc.subtotal],
-    ["ضريبة القيمة المضافة", calc.vat],
-  ];
-  r += 1;
-  summaryLines.forEach(([label, val]) => {
-    ws.mergeCells(`A${r}:G${r}`);
-    const lc = ws.getCell(`A${r}`);
-    lc.value = label;
-    lc.font = { name: "Arial", bold: true, size: 11, color: { argb: "FF1F4E78" } };
-    lc.alignment = { horizontal: "right", vertical: "middle" };
-    ws.mergeCells(`H${r}:I${r}`);
-    const vc = ws.getCell(`H${r}`);
-    vc.value = Math.round(val);
-    vc.numFmt = '#,##0 "ج.م"';
-    vc.font = { name: "Arial", bold: true, size: 11 };
-    vc.alignment = { horizontal: "center", vertical: "middle" };
-    r++;
-  });
-
-  ws.mergeCells(`A${r}:G${r}`);
-  const fl = ws.getCell(`A${r}`);
-  fl.value = "الإجمالي النهائي المستحق";
-  fl.font = { name: "Arial", bold: true, size: 13, color: { argb: XL_WHITE } };
-  fl.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_GOLD } };
-  fl.alignment = { horizontal: "right", vertical: "middle" };
-  ws.mergeCells(`H${r}:I${r}`);
-  const fv = ws.getCell(`H${r}`);
-  fv.value = Math.round(calc.grandTotal);
-  fv.numFmt = '#,##0 "ج.م"';
-  fv.font = { name: "Arial", bold: true, size: 13, color: { argb: XL_WHITE } };
-  fv.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_GOLD } };
-  fv.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 24;
-
-  ws.views = [{ state: "frozen", ySplit: headerRow, rightToLeft: true }];
-  ws.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: lastDataRow, column: 9 } };
-
-  await saveWorkbook(wb, `مقايسة_كاملة_${client.name || "عميل"}.xlsx`);
-}
-
-async function exportPipelineSummary(clients, settings) {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("ملخص كل العملاء", { views: [{ rightToLeft: true }] });
-  ws.columns = [
-    { width: 22 }, { width: 15 }, { width: 28 }, { width: 10 },
-    { width: 14 }, { width: 17 }, { width: 12 },
-  ];
-  ws.mergeCells("A1:G1");
-  const title = ws.getCell("A1");
-  title.value = "ملخص خط عملاء المكتب";
-  title.font = { name: "Arial", bold: true, size: 15, color: { argb: XL_WHITE } };
-  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_NAVY } };
-  title.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(1).height = 26;
-
-  const headerRow = 3;
-  const headers = ["اسم العميل", "الهاتف", "العنوان", "المساحة (م²)", "المرحلة", "الإجمالي النهائي (ج.م)", "تاريخ الإضافة"];
-  headers.forEach((h, i) => xlHeaderCell(ws.getRow(headerRow).getCell(i + 1), h));
-  ws.getRow(headerRow).height = 22;
-
-  const stageFill = {
-    "عميل محتمل": "FF9CA3AF", "قيد التصميم": "FF2E5395", "تم التعاقد": "FFBF9000",
-    "قيد التنفيذ": "FFC2410C", "تم التسليم": "FF1E7B45",
-  };
-
-  let r = headerRow + 1;
-  let totalAll = 0;
-  clients.forEach((c, i) => {
-    const calc = calcClient(c, settings);
-    totalAll += calc.grandTotal;
-    const fill = i % 2 ? XL_WHITE : XL_LIGHT;
-    const row = ws.getRow(r);
-    xlDataCell(row.getCell(1), c.name || "بدون اسم", { fill, bold: true });
-    xlDataCell(row.getCell(2), c.phone || "", { fill, align: "center" });
-    xlDataCell(row.getCell(3), c.address || "", { fill });
-    xlDataCell(row.getCell(4), Number(c.area) || 0, { fill, align: "center" });
-    xlDataCell(row.getCell(5), c.stage, { fill, align: "center", bold: true, color: stageFill[c.stage] || "FF1F2937" });
-    xlDataCell(row.getCell(6), Math.round(calc.grandTotal), { fill, align: "center", bold: true, numFmt: '#,##0 "ج.م"' });
-    xlDataCell(row.getCell(7), c.createdAt || "", { fill, align: "center" });
-    r++;
-  });
-
-  ws.mergeCells(`A${r}:E${r}`);
-  const fl = ws.getCell(`A${r}`);
-  fl.value = "إجمالي قيمة خط الأعمال بالكامل";
-  fl.font = { name: "Arial", bold: true, size: 12, color: { argb: XL_WHITE } };
-  fl.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_GOLD } };
-  fl.alignment = { horizontal: "right", vertical: "middle" };
-  ws.mergeCells(`F${r}:G${r}`);
-  const fv = ws.getCell(`F${r}`);
-  fv.value = Math.round(totalAll);
-  fv.numFmt = '#,##0 "ج.م"';
-  fv.font = { name: "Arial", bold: true, size: 12, color: { argb: XL_WHITE } };
-  fv.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL_GOLD } };
-  fv.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 22;
-
-  ws.views = [{ state: "frozen", ySplit: headerRow, rightToLeft: true }];
-  ws.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: r - 1, column: 7 } };
-
-  await saveWorkbook(wb, "ملخص_خط_العملاء.xlsx");
-}
+import {
+  getCloudConfig, setCloudConfig, isCloudMode, isSimpleMode, getSupabase, withTimeout,
+  storageGet, storageSet, storageDelete, storageListKeys, storageGetAllEntries,
+  DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY,
+} from "./data/storage.js";
+import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profiles.js";
+import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
+import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
+import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "./domain/catalogue.js";
+import { newClient, resolveItem, calcClient } from "./domain/pricing.js";
+import {
+  NAVY, NAVY_DARK, GOLD, LIGHT, BORDER, TEXT, MUTED,
+  LEVELS, LEVEL_COLORS, SCOPES, STAGES, STAGE_COLORS,
+} from "./ui/tokens.js";
+import { PAYMENT_STAGES, generateContractDocx, downloadDocx } from "./export/docx.js";
+import { buildAndDownloadClientPptx } from "./export/pptx.js";
+import { exportFullBOQ, exportPipelineSummary } from "./export/excel.js";
 
 /* ============================= Excel control hub ============================= */
 function ExcelHub({ clients, settings, onUpdate }) {
@@ -1011,10 +56,10 @@ function ExcelHub({ clients, settings, onUpdate }) {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl font-bold" style={{ color: NAVY }}>لوحة تحكم إكسل — كل ملفات كل عميل في مكان واحد</h2>
-          <p className="mt-1 text-xs" style={{ color: MUTED }}>مقايسة Excel كاملة، رابط مجلد الملفات (العقد والعرض التقديمي ونموذج التسليم)، وتصدير ملخص شامل.</p>
+          <h2 className="text-xl font-bold text-navy">لوحة تحكم إكسل — كل ملفات كل عميل في مكان واحد</h2>
+          <p className="mt-1 text-xs text-muted">مقايسة Excel كاملة، رابط مجلد الملفات (العقد والعرض التقديمي ونموذج التسليم)، وتصدير ملخص شامل.</p>
         </div>
-        <button onClick={() => exportPipelineSummary(clients, settings)} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm" style={{ backgroundColor: NAVY }}>
+        <button onClick={() => exportPipelineSummary(clients, settings)} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm bg-navy">
           <Download size={16} /> تصدير ملخص كل العملاء
         </button>
       </div>
@@ -1058,16 +103,16 @@ function ExcelHub({ clients, settings, onUpdate }) {
                 return (
                   <tr key={c.id} style={{ backgroundColor: i % 2 ? "#FFFFFF" : LIGHT, borderTop: `1px solid ${BORDER}` }}>
                     <td className="p-3 font-semibold">{c.name || "بدون اسم"}</td>
-                    <td className="p-3 text-center text-xs" style={{ color: MUTED }}>{c.engineer || "—"}</td>
+                    <td className="p-3 text-center text-xs text-muted">{c.engineer || "—"}</td>
                     <td className="p-3 text-center">
                       {c.progressPercent > 0 ? (
                         <span className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>{c.progressPercent}%</span>
                       ) : (
-                        <span className="text-xs" style={{ color: MUTED }}>—</span>
+                        <span className="text-xs text-muted">—</span>
                       )}
                     </td>
                     <td className="p-3 text-center"><Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} /></td>
-                    <td className="p-3 text-center font-bold" style={{ color: NAVY }}>{fmt(calc.grandTotal)} ج.م</td>
+                    <td className="p-3 text-center font-bold text-navy">{fmt(calc.grandTotal)} ج.م</td>
                     <td className="p-3 text-center">
                       <button onClick={() => exportFullBOQ(c, settings)} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
                         <FileSpreadsheet size={13} /> تحميل
@@ -1084,7 +129,7 @@ function ExcelHub({ clients, settings, onUpdate }) {
                           <FileText size={13} /> تحميل العقد
                         </button>
                       ) : (
-                        <span className="text-xs" style={{ color: MUTED }}>بعد التعاقد</span>
+                        <span className="text-xs text-muted">بعد التعاقد</span>
                       )}
                     </td>
                     <td className="p-3">
@@ -1097,7 +142,7 @@ function ExcelHub({ clients, settings, onUpdate }) {
                           style={{ border: `1px solid ${BORDER}` }}
                         />
                         {c.folderLink && (
-                          <a href={c.folderLink} target="_blank" rel="noreferrer" style={{ color: NAVY }}>
+                          <a href={c.folderLink} target="_blank" rel="noreferrer" className="text-navy">
                             <ExternalLink size={15} />
                           </a>
                         )}
@@ -1136,9 +181,9 @@ function StatCard({ label, value, sub, accent, icon: Icon }) {
     <div className="relative overflow-hidden rounded-xl p-4 shadow-sm transition-shadow hover:shadow-md" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-xs font-semibold" style={{ color: MUTED }}>{label}</div>
+          <div className="text-xs font-semibold text-muted">{label}</div>
           <div className="mt-1 text-2xl font-bold" style={{ color: accent || NAVY }}>{value}</div>
-          {sub && <div className="mt-0.5 text-xs" style={{ color: MUTED }}>{sub}</div>}
+          {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
         </div>
         {Icon && (
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: (accent || NAVY) + "1A" }}>
@@ -1484,7 +529,7 @@ function AppInner() {
   if (loading) {
     return (
       <div dir="rtl" className="flex h-[600px] items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif" }}>
-        <div className="flex flex-col items-center gap-3" style={{ color: MUTED }}>
+        <div className="flex flex-col items-center gap-3 text-muted">
           <Loader2 className="animate-spin" size={28} />
           <div className="text-sm">جاري تحميل بيانات العملاء…</div>
         </div>
@@ -1497,7 +542,7 @@ function AppInner() {
       <div dir="rtl" className="flex min-h-[700px] items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
         <div className="w-full max-w-md rounded-2xl p-8 text-center shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
           <div className="mb-2 text-lg font-bold" style={{ color: "#C00000" }}>تعذر الاتصال بالخادم السحابي</div>
-          <p className="mb-3 text-sm leading-6" style={{ color: MUTED }}>
+          <p className="mb-3 text-sm leading-6 text-muted">
             تأكد من صحة رابط ومفتاح Supabase في الإعدادات، ومن اتصالك بالإنترنت. بياناتك المحلية السابقة لم تتأثر.
           </p>
           {connectionErrorDetail && (
@@ -1514,8 +559,7 @@ function AppInner() {
           </button>
           <button
             onClick={() => { setCloudConfig(null); window.location.reload(); }}
-            className="w-full rounded-lg py-2.5 text-sm font-bold text-white"
-            style={{ backgroundColor: NAVY }}
+            className="w-full rounded-lg py-2.5 text-sm font-bold text-white bg-navy"
           >
             تعطيل المزامنة السحابية والعودة للتخزين المحلي
           </button>
@@ -1537,7 +581,7 @@ function AppInner() {
   return (
     <div dir="rtl" className="min-h-[700px] w-full" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT, color: TEXT }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: NAVY }}>
+      <div className="flex items-center justify-between px-6 py-4 bg-navy">
         <div>
           <div className="text-lg font-bold text-white">نظام متابعة العملاء والتسعير</div>
           <div className="text-xs" style={{ color: "#AEB9C6" }}>مكتب __________ للاستشارات المعمارية</div>
@@ -1635,7 +679,7 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
   const recent = clients.slice(0, 5);
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between rounded-2xl p-5" style={{ backgroundColor: NAVY }}>
+      <div className="mb-6 flex items-center justify-between rounded-2xl p-5 bg-navy">
         <div>
           <h2 className="text-xl font-bold text-white">نظرة عامة على خط العملاء</h2>
           <p className="mt-0.5 text-xs" style={{ color: "#AEB9C6" }}>لوحة متابعة شاملة لأداء المكتب</p>
@@ -1655,22 +699,22 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-3 text-sm font-bold" style={{ color: NAVY }}>قيمة خط الأعمال حسب المرحلة</div>
+          <div className="mb-3 text-sm font-bold text-navy">قيمة خط الأعمال حسب المرحلة</div>
           {stats.count > 0 ? <StageValueChart stats={stats} /> : (
-            <div className="flex h-40 items-center justify-center text-sm" style={{ color: MUTED }}>لا يوجد بيانات بعد</div>
+            <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
           )}
         </div>
         <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-3 text-sm font-bold" style={{ color: NAVY }}>نمو خط الأعمال آخر 6 أشهر</div>
+          <div className="mb-3 text-sm font-bold text-navy">نمو خط الأعمال آخر 6 أشهر</div>
           {clients.length > 0 ? <MonthlyTrendChart clients={clients} settings={settings} /> : (
-            <div className="flex h-40 items-center justify-center text-sm" style={{ color: MUTED }}>لا يوجد بيانات بعد</div>
+            <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
           )}
         </div>
       </div>
 
       <div className="mt-4 rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 text-sm font-bold" style={{ color: NAVY }}>توزيع خط الأعمال حسب المرحلة (بعدد العملاء)</div>
-        <div className="flex h-6 w-full overflow-hidden rounded-full" style={{ backgroundColor: LIGHT }}>
+        <div className="mb-3 text-sm font-bold text-navy">توزيع خط الأعمال حسب المرحلة (بعدد العملاء)</div>
+        <div className="flex h-6 w-full overflow-hidden rounded-full bg-light">
           {STAGES.map(s => {
             const pct = stats.count ? (stats.byStage[s].count / stats.count) * 100 : 0;
             return pct > 0 ? <div key={s} style={{ width: pct + "%", backgroundColor: STAGE_COLORS[s] }} title={s} /> : null;
@@ -1682,8 +726,8 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
       </div>
 
       <div className="mt-4 rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 text-sm font-bold" style={{ color: NAVY }}>أحدث العملاء</div>
-        {recent.length === 0 && <div className="text-sm" style={{ color: MUTED }}>لا يوجد عملاء بعد — ابدأ بإضافة أول عميل.</div>}
+        <div className="mb-3 text-sm font-bold text-navy">أحدث العملاء</div>
+        {recent.length === 0 && <div className="text-sm text-muted">لا يوجد عملاء بعد — ابدأ بإضافة أول عميل.</div>}
         <div className="flex flex-col gap-2">
           {recent.map(c => {
             const calc = calcClient(c, settings);
@@ -1693,7 +737,7 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
                   <Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} />
                   <span className="text-sm font-semibold">{c.name || "بدون اسم"}</span>
                 </div>
-                <span className="text-sm font-bold" style={{ color: NAVY }}>{fmt(calc.grandTotal)} ج.م</span>
+                <span className="text-sm font-bold text-navy">{fmt(calc.grandTotal)} ج.م</span>
               </button>
             );
           })}
@@ -1730,8 +774,8 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold" style={{ color: NAVY }}>العملاء ({visible.length}{visible.length !== clients.length ? ` من ${clients.length}` : ""})</h2>
-        <button onClick={onAdd} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm" style={{ backgroundColor: NAVY }}>
+        <h2 className="text-xl font-bold text-navy">العملاء ({visible.length}{visible.length !== clients.length ? ` من ${clients.length}` : ""})</h2>
+        <button onClick={onAdd} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm bg-navy">
           <Plus size={16} /> عميل جديد
         </button>
       </div>
@@ -1780,21 +824,21 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
                   <button onClick={() => onDelete(c.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16} /></button>
                 </div>
                 <div className="mb-1 text-base font-bold">{c.name || "بدون اسم"}</div>
-                <div className="mb-1 flex items-center gap-1.5 text-xs" style={{ color: MUTED }}><MapPin size={12} />{c.address || "بدون عنوان"}</div>
-                <div className="mb-1 flex items-center gap-1.5 text-xs" style={{ color: MUTED }}><Ruler size={12} />{c.area} م²</div>
-                {c.phone && <div className="mb-2 flex items-center gap-1.5 text-xs" style={{ color: MUTED }}><Phone size={12} />{c.phone}</div>}
+                <div className="mb-1 flex items-center gap-1.5 text-xs text-muted"><MapPin size={12} />{c.address || "بدون عنوان"}</div>
+                <div className="mb-1 flex items-center gap-1.5 text-xs text-muted"><Ruler size={12} />{c.area} م²</div>
+                {c.phone && <div className="mb-2 flex items-center gap-1.5 text-xs text-muted"><Phone size={12} />{c.phone}</div>}
                 {(c.stage === "قيد التنفيذ" || c.progressPercent > 0) && (
                   <div className="mb-2">
-                    <div className="mb-1 flex items-center justify-between text-xs font-semibold" style={{ color: MUTED }}>
+                    <div className="mb-1 flex items-center justify-between text-xs font-semibold text-muted">
                       <span>نسبة الإنجاز بالموقع</span>
                       <span>{c.progressPercent || 0}%</span>
                     </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: LIGHT }}>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-light">
                       <div className="h-full rounded-full" style={{ width: `${c.progressPercent || 0}%`, backgroundColor: "#1E7B45" }} />
                     </div>
                   </div>
                 )}
-                <div className="mb-3 rounded-lg px-3 py-2 text-center text-sm font-bold text-white" style={{ backgroundColor: NAVY }}>
+                <div className="mb-3 rounded-lg px-3 py-2 text-center text-sm font-bold text-white bg-navy">
                   {fmt(calc.grandTotal)} ج.م
                 </div>
                 <button onClick={() => onSelect(c.id)} className="w-full rounded-lg py-1.5 text-sm font-semibold" style={{ border: `1px solid ${NAVY}`, color: NAVY }}>
@@ -1818,7 +862,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
 
   return (
     <div>
-      <button onClick={onBack} className="mb-4 flex items-center gap-1 text-sm font-semibold" style={{ color: NAVY }}>
+      <button onClick={onBack} className="mb-4 flex items-center gap-1 text-sm font-semibold text-navy">
         <ChevronLeft size={16} /> العودة لقائمة العملاء
       </button>
 
@@ -1846,9 +890,9 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
         <div className="lg:col-span-1">
           <div className="rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-bold" style={{ color: NAVY }}>بيانات العميل</div>
+              <div className="text-sm font-bold text-navy">بيانات العميل</div>
               <div className="flex items-center gap-2">
-                {saving && <Loader2 className="animate-spin" size={14} style={{ color: MUTED }} />}
+                {saving && <Loader2 className="animate-spin text-muted" size={14} />}
                 <button onClick={onDelete} className="text-gray-300 hover:text-red-500"><Trash2 size={16} /></button>
               </div>
             </div>
@@ -1873,13 +917,13 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
             </Field>
           </div>
 
-          <button onClick={exportExcel} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold text-white shadow-sm" style={{ backgroundColor: GOLD }}>
+          <button onClick={exportExcel} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold text-white shadow-sm bg-gold">
             <Download size={16} /> تصدير المقايسة Excel
           </button>
           <button onClick={() => buildAndDownloadClientPptx(client, calc, settings)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold text-white shadow-sm" style={{ backgroundColor: "#2E5395" }}>
             <FileText size={16} /> تصدير عرض تقديمي PowerPoint
           </button>
-          <div className="mt-2 flex items-start gap-1.5 text-xs" style={{ color: MUTED }}>
+          <div className="mt-2 flex items-start gap-1.5 text-xs text-muted">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
             كل الملفات هنا تُبنى لحظيًا من بيانات هذا العميل — أي تعديل بالمستويات أو الأسعار يظهر فورًا في أي ملف جديد تصدّره، بلا حاجة لتحديث يدوي.
           </div>
@@ -1887,7 +931,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
 
         {/* right: scope selection + calc */}
         <div className="lg:col-span-2">
-          <div className="mb-4 flex gap-1 rounded-lg p-1" style={{ backgroundColor: LIGHT }}>
+          <div className="mb-4 flex gap-1 rounded-lg p-1 bg-light">
             <button
               onClick={() => setInnerTab("pricing")}
               className="flex-1 rounded-md py-2 text-sm font-bold transition-colors"
@@ -1907,10 +951,10 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
           {innerTab === "pricing" && (
             <>
           <div className="rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-            <div className="mb-3 text-sm font-bold" style={{ color: NAVY }}>مستوى التشطيب لكل نطاق عمل</div>
+            <div className="mb-3 text-sm font-bold text-navy">مستوى التشطيب لكل نطاق عمل</div>
             <div className="flex flex-col gap-3">
               {SCOPES.map(scope => (
-                <div key={scope} className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ backgroundColor: LIGHT }}>
+                <div key={scope} className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3 bg-light">
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -1936,7 +980,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
                       </button>
                     ))}
                   </div>
-                  <div className="w-full text-left text-sm font-bold sm:w-auto" style={{ color: NAVY }}>
+                  <div className="w-full text-left text-sm font-bold sm:w-auto text-navy">
                     {client.scopeIncluded[scope] ? fmt(calc.byScope[scope]) + " ج.م" : "—"}
                   </div>
                 </div>
@@ -1946,7 +990,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
 
           <FullItemBOQ client={client} onChange={onChange} currentMember={currentMember} />
 
-          <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: NAVY }}>
+          <div className="mt-4 rounded-xl p-4 bg-navy">
             <div className="mb-3 text-sm font-bold text-white">ملخص السعر</div>
             <SummaryRow label="إجمالي بنود التنفيذ" value={calc.execTotal} />
             <SummaryRow label="أتعاب الإشراف الهندسي" value={calc.supervision} />
@@ -1956,7 +1000,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
             <div className="my-2 h-px" style={{ backgroundColor: "#2E5395" }} />
             <SummaryRow label="الإجمالي قبل الضريبة" value={calc.subtotal} bold />
             <SummaryRow label="ضريبة القيمة المضافة" value={calc.vat} />
-            <div className="mt-3 flex items-center justify-between rounded-lg px-3 py-2.5" style={{ backgroundColor: GOLD }}>
+            <div className="mt-3 flex items-center justify-between rounded-lg px-3 py-2.5 bg-gold">
               <span className="text-sm font-bold" style={{ color: "#1F1F1F" }}>الإجمالي النهائي المستحق</span>
               <span className="text-lg font-bold" style={{ color: "#1F1F1F" }}>{fmt(calc.grandTotal)} ج.م</span>
             </div>
@@ -2027,7 +1071,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
     <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-bold" style={{ color: NAVY }}>المقايسة الكاملة القابلة للتعديل ({ITEMS.length} بند)</div>
+          <div className="text-sm font-bold text-navy">المقايسة الكاملة القابلة للتعديل ({ITEMS.length} بند)</div>
           {customCount > 0 && (
             <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
               {customCount} تخصيص يدوي
@@ -2040,14 +1084,14 @@ function FullItemBOQ({ client, onChange, currentMember }) {
               إعادة الكل للوضع الافتراضي
             </button>
           )}
-          <button onClick={() => setExpanded(!expanded)} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white" style={{ backgroundColor: NAVY }}>
+          <button onClick={() => setExpanded(!expanded)} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white bg-navy">
             {expanded ? "إخفاء" : "عرض وتعديل كل البنود"}
           </button>
         </div>
       </div>
 
       {!expanded && (
-        <p className="mt-2 text-xs leading-6" style={{ color: MUTED }}>
+        <p className="mt-2 text-xs leading-6 text-muted">
           الجدول أعلاه بيتحكم في المستوى على مستوى الفئة كاملة. افتح هنا لو محتاج تغيّر مستوى أو كمية أو سعر
           وحدة أو تضمين بند واحد بعينه بشكل مستقل — مفيد لتغيّرات سعر السوق أثناء التنفيذ أو اختلاف سعر
           التوريد بين عميل وآخر. أي تعديل بيتزامن فورًا زي باقي البيانات.
@@ -2056,7 +1100,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
 
       {expanded && (
         <div className="mt-3 flex flex-col gap-0.5">
-          <div className="hidden grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-bold sm:grid" style={{ color: MUTED }}>
+          <div className="hidden grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-bold sm:grid text-muted">
             <div className="col-span-3">البند</div>
             <div className="col-span-2">الكمية</div>
             <div className="col-span-2">المستوى</div>
@@ -2076,7 +1120,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
             return (
               <React.Fragment key={name}>
                 {showScopeHeader && (
-                  <div className="mt-3 mb-1 text-xs font-bold" style={{ color: MUTED }}>{scope}</div>
+                  <div className="mt-3 mb-1 text-xs font-bold text-muted">{scope}</div>
                 )}
                 <div
                   className="grid grid-cols-12 items-center gap-2 rounded-lg px-2 py-2"
@@ -2099,7 +1143,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       value={Object.prototype.hasOwnProperty.call(itemQty, name) ? itemQty[name] : Math.round(r.qty * 100) / 100}
                       onChange={e => setItemPatch("itemQty", name, e.target.value)}
                     />
-                    <span className="text-[10px]" style={{ color: MUTED }}>{unit}</span>
+                    <span className="text-[10px] text-muted">{unit}</span>
                   </div>
                   <div className="col-span-6 sm:col-span-2">
                     <select
@@ -2125,12 +1169,12 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       onChange={e => { if (mayEditPrice) setPriceOverride(name, e.target.value); }}
                     />
                     {r.hasPriceOverride && (
-                      <span className="text-[9px]" style={{ color: MUTED }}>
+                      <span className="text-[9px] text-muted">
                         كان {fmt(r.basePrice)} — عُدّل {r.priceDate}
                       </span>
                     )}
                   </div>
-                  <div className="col-span-6 text-left text-xs font-bold sm:col-span-2" style={{ color: NAVY }}>
+                  <div className="col-span-6 text-left text-xs font-bold sm:col-span-2 text-navy">
                     {r.included ? fmt(r.total) + " ج.م" : "—"}
                   </div>
                   <div className="col-span-4 text-left sm:col-span-1">
@@ -2184,20 +1228,20 @@ function SiteVisitLog({ client, onChange }) {
     <div className="mt-5 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-bold" style={{ color: NAVY }}>سجل متابعة الموقع</div>
+          <div className="text-sm font-bold text-navy">سجل متابعة الموقع</div>
           {client.progressPercent > 0 && (
             <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
               نسبة الإنجاز الحالية: {client.progressPercent}%
             </span>
           )}
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white" style={{ backgroundColor: NAVY }}>
+        <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white bg-navy">
           <Plus size={14} /> تسجيل زيارة جديدة
         </button>
       </div>
 
       {showForm && (
-        <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: LIGHT }}>
+        <div className="mb-4 rounded-lg p-3 bg-light">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="تاريخ الزيارة">
               <input type="date" className="inp" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} />
@@ -2222,7 +1266,7 @@ function SiteVisitLog({ client, onChange }) {
       )}
 
       {loadingVisits ? (
-        <div className="flex items-center gap-2 py-6 text-sm" style={{ color: MUTED }}>
+        <div className="flex items-center gap-2 py-6 text-sm text-muted">
           <Loader2 className="animate-spin" size={16} /> جاري تحميل السجل…
         </div>
       ) : visits.length === 0 ? (
@@ -2232,16 +1276,16 @@ function SiteVisitLog({ client, onChange }) {
       ) : (
         <div className="flex flex-col gap-2">
           {visits.map(v => (
-            <div key={v.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg p-3" style={{ backgroundColor: LIGHT }}>
+            <div key={v.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg p-3 bg-light">
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-bold">
                   <span>{v.date}</span>
-                  <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: NAVY }}>{v.percent}%</span>
-                  {v.engineer && <span className="text-xs font-normal" style={{ color: MUTED }}>بواسطة {v.engineer}</span>}
+                  <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white bg-navy">{v.percent}%</span>
+                  {v.engineer && <span className="text-xs font-normal text-muted">بواسطة {v.engineer}</span>}
                 </div>
-                {v.notes && <div className="mt-1 text-xs leading-5" style={{ color: TEXT }}>{v.notes}</div>}
+                {v.notes && <div className="mt-1 text-xs leading-5 text-ink">{v.notes}</div>}
                 {v.photoLink && (
-                  <a href={v.photoLink} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: NAVY }}>
+                  <a href={v.photoLink} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-navy">
                     <ExternalLink size={12} /> عرض الصور
                   </a>
                 )}
@@ -2257,7 +1301,7 @@ function SiteVisitLog({ client, onChange }) {
 
 function Field({ label, children }) {
   return (
-    <label className="block text-xs font-semibold" style={{ color: MUTED }}>
+    <label className="block text-xs font-semibold text-muted">
       {label}
       {children}
     </label>
@@ -2289,20 +1333,20 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
   return (
     <div dir="rtl" className="flex min-h-[700px] w-full items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-1 text-center text-lg font-bold" style={{ color: NAVY }}>نظام متابعة العملاء والتسعير</div>
-        <div className="mb-6 text-center text-xs" style={{ color: MUTED }}>مكتب __________ للاستشارات المعمارية</div>
+        <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
+        <div className="mb-6 text-center text-xs text-muted">مكتب __________ للاستشارات المعمارية</div>
 
         {team.length === 0 ? (
           <>
-            <div className="mb-4 text-sm font-semibold" style={{ color: TEXT }}>أول مرة تفتح الأداة — أدخل اسمك لإنشاء حساب مالك المكتب</div>
+            <div className="mb-4 text-sm font-semibold text-ink">أول مرة تفتح الأداة — أدخل اسمك لإنشاء حساب مالك المكتب</div>
             <input className="inp" placeholder="اسمك الكامل" value={name} onChange={e => setName(e.target.value)} />
-            <button disabled={busy || !name.trim()} onClick={createOwner} className="mt-3 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: NAVY }}>
+            <button disabled={busy || !name.trim()} onClick={createOwner} className="mt-3 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40 bg-navy">
               بدء استخدام النظام كمالك للمكتب
             </button>
           </>
         ) : (
           <>
-            <div className="mb-3 text-sm font-semibold" style={{ color: TEXT }}>من أنت؟</div>
+            <div className="mb-3 text-sm font-semibold text-ink">من أنت؟</div>
             <div className="flex flex-col gap-2">
               {team.map(m => (
                 <button key={m.id} onClick={() => onSignIn(m)} className="flex items-center justify-between rounded-lg px-4 py-2.5 text-sm font-semibold" style={{ border: `1px solid ${BORDER}` }}>
@@ -2311,7 +1355,7 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
                 </button>
               ))}
             </div>
-            <div className="mt-4 text-center text-xs" style={{ color: MUTED }}>
+            <div className="mt-4 text-center text-xs text-muted">
               مش لاقي اسمك؟ اطلب من مالك المكتب يضيفك من تبويب "الإعدادات".
             </div>
           </>
@@ -2372,22 +1416,22 @@ function CloudAuthGate({ onAuthSuccess }) {
   return (
     <div dir="rtl" className="flex min-h-[700px] w-full items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-1 text-center text-lg font-bold" style={{ color: NAVY }}>نظام متابعة العملاء والتسعير</div>
+        <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
         <div className="mb-1 flex items-center justify-center gap-1.5 text-xs" style={{ color: "#1E7B45" }}>
           <Wifi size={13} /> وضع المزامنة السحابية مفعّل
         </div>
-        <div className="mb-6 text-center text-xs" style={{ color: MUTED }}>مكتب __________ للاستشارات المعمارية</div>
+        <div className="mb-6 text-center text-xs text-muted">مكتب __________ للاستشارات المعمارية</div>
 
         {pendingConfirm ? (
           <div className="rounded-lg p-4 text-center text-sm" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
             تم إنشاء الحساب. تفقّد بريدك الإلكتروني واضغط رابط التأكيد، ثم ارجع هنا وسجّل الدخول.
-            <div className="mt-2 text-xs" style={{ color: MUTED }}>
+            <div className="mt-2 text-xs text-muted">
               (لو المكتب مش محتاج تأكيد بريد، ألغِ خاصية "Confirm email" من إعدادات Supabase Auth لتسريع الدخول لاحقًا.)
             </div>
           </div>
         ) : (
           <>
-            <div className="mb-4 flex rounded-lg p-1" style={{ backgroundColor: LIGHT }}>
+            <div className="mb-4 flex rounded-lg p-1 bg-light">
               <button onClick={() => setMode("signin")} className="flex-1 rounded-md py-1.5 text-sm font-bold" style={{ backgroundColor: mode === "signin" ? NAVY : "transparent", color: mode === "signin" ? "#FFFFFF" : TEXT }}>تسجيل الدخول</button>
               <button onClick={() => setMode("signup")} className="flex-1 rounded-md py-1.5 text-sm font-bold" style={{ backgroundColor: mode === "signup" ? NAVY : "transparent", color: mode === "signup" ? "#FFFFFF" : TEXT }}>حساب جديد</button>
             </div>
@@ -2395,7 +1439,7 @@ function CloudAuthGate({ onAuthSuccess }) {
             {mode === "signup" && (
               <>
                 <input className="inp" placeholder="اسمك الكامل" value={name} onChange={e => setName(e.target.value)} />
-                <div className="mb-3 flex items-start gap-1.5 text-xs leading-5" style={{ color: MUTED }}>
+                <div className="mb-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
                   <ShieldCheck size={13} className="mt-0.5 shrink-0" />
                   أول شخص يسجّل في المشروع يبقى مالك المكتب تلقائيًا. أي حد بعده هيفضل "بانتظار الموافقة"
                   لحد ما مالك فعلي يوافق عليه من تبويب الإعدادات.
@@ -2408,8 +1452,7 @@ function CloudAuthGate({ onAuthSuccess }) {
             <button
               disabled={busy || !email.trim() || !password}
               onClick={mode === "signin" ? handleSignIn : handleSignUp}
-              className="mt-1 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40"
-              style={{ backgroundColor: NAVY }}
+              className="mt-1 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40 bg-navy"
             >
               {busy ? "جاري التنفيذ…" : mode === "signin" ? "دخول" : "إنشاء الحساب والدخول"}
             </button>
@@ -2417,8 +1460,7 @@ function CloudAuthGate({ onAuthSuccess }) {
         )}
         <button
           onClick={() => { setCloudConfig(null); window.location.reload(); }}
-          className="mt-4 w-full text-center text-xs font-semibold underline"
-          style={{ color: MUTED }}
+          className="mt-4 w-full text-center text-xs font-semibold underline text-muted"
         >
           تعذّر الدخول؟ ارجع مؤقتًا للوضع المحلي
         </button>
@@ -2447,20 +1489,19 @@ function PendingApprovalScreen({ onSignOut, onRefresh }) {
             <Loader2 size={26} className="animate-spin" style={{ color: "#8A6D00" }} />
           </div>
         </div>
-        <div className="mb-2 text-lg font-bold" style={{ color: NAVY }}>حسابك بانتظار الموافقة</div>
-        <p className="mb-5 text-sm leading-6" style={{ color: MUTED }}>
+        <div className="mb-2 text-lg font-bold text-navy">حسابك بانتظار الموافقة</div>
+        <p className="mb-5 text-sm leading-6 text-muted">
           تم إنشاء حسابك بنجاح، لكن لازم مالك المكتب يوافق عليك أولاً قبل ما تقدر تدخل على بيانات العملاء.
           الصفحة هتفتح تلقائيًا فور الموافقة — تقدر تسيبها مفتوحة أو ترجع بعد شوية.
         </p>
         <button
           onClick={async () => { setChecking(true); await onRefresh(); setChecking(false); }}
-          className="mb-2 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-50"
+          className="mb-2 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-50 bg-navy"
           disabled={checking}
-          style={{ backgroundColor: NAVY }}
         >
           {checking ? "جاري التحقق…" : "تحقق الآن"}
         </button>
-        <button onClick={onSignOut} className="w-full text-center text-xs font-semibold underline" style={{ color: MUTED }}>
+        <button onClick={onSignOut} className="w-full text-center text-xs font-semibold underline text-muted">
           تسجيل الخروج
         </button>
       </div>
@@ -2621,13 +1662,13 @@ alter publication supabase_realtime add table profiles;`;
 
   return (
     <div className="max-w-lg">
-      <h2 className="mb-4 text-xl font-bold" style={{ color: NAVY }}>الإعدادات العامة</h2>
+      <h2 className="mb-4 text-xl font-bold text-navy">الإعدادات العامة</h2>
 
       <div className="rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-1 flex items-center gap-2 text-sm font-bold" style={{ color: NAVY }}>
+        <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
           <Wifi size={16} /> المزامنة السحابية بين الأجهزة (اختياري)
         </div>
-        <p className="mb-3 text-xs leading-6" style={{ color: MUTED }}>
+        <p className="mb-3 text-xs leading-6 text-muted">
           بدون إعداد هذا القسم، الأداة تعمل محليًا على هذا الجهاز فقط. لو عايز كل مهندس يدخل من جهازه
           الشخصي ويشوف نفس البيانات لحظيًا، أنشئ مشروع مجاني على{" "}
           <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: NAVY, fontWeight: "bold" }}>Supabase</a>
@@ -2653,7 +1694,7 @@ alter publication supabase_realtime add table profiles;`;
                 تعطيل المزامنة والعودة للتخزين المحلي
               </button>
             </div>
-            <p className="mt-2 text-xs" style={{ color: MUTED }}>
+            <p className="mt-2 text-xs text-muted">
               عند التحويل بين الوضعين لأول مرة، شغّل كود الـ SQL المناسب في Supabase (زرار "إظهار كود الإعداد" تحت).
             </p>
           </div>
@@ -2691,7 +1732,7 @@ alter publication supabase_realtime add table profiles;`;
             </div>
             {showSql && (
               <div className="mt-3">
-                <p className="mb-2 text-xs" style={{ color: MUTED }}>
+                <p className="mb-2 text-xs text-muted">
                   شغّل كود واحد بس حسب الوضع اللي هتفعّله (آمن تمامًا تكرر التشغيل لاحقًا لو غيّرت رأيك):
                 </p>
                 <p className="mb-1 text-xs font-bold" style={{ color: "#B45309" }}>الوضع التجريبي المبسط:</p>
@@ -2709,7 +1750,7 @@ alter publication supabase_realtime add table profiles;`;
       </div>
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 text-sm font-bold" style={{ color: NAVY }}>فريق المكتب والصلاحيات</div>
+        <div className="mb-3 text-sm font-bold text-navy">فريق المكتب والصلاحيات</div>
 
         {currentSimpleMode ? (
           <div className="flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#8A6D00" }}>
@@ -2727,7 +1768,7 @@ alter publication supabase_realtime add table profiles;`;
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
                   <div className="text-xs">
                     <div className="font-semibold">{p.name}</div>
-                    <div style={{ color: MUTED }}>{p.email}</div>
+                    <div className="text-muted">{p.email}</div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {ASSIGNABLE_ROLES.map(r => (
@@ -2749,11 +1790,11 @@ alter publication supabase_realtime add table profiles;`;
 
         <div className="mb-3 flex flex-col gap-2">
           {team.map(m => (
-            <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: LIGHT }}>
+            <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2 bg-light">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold">{m.name}</span>
                 <Badge text={roleLabel(m.role)} color={(ROLES[m.role] || ROLES.engineer).color} />
-                {currentMember?.id === m.id && <span className="text-xs" style={{ color: MUTED }}>(أنت الآن)</span>}
+                {currentMember?.id === m.id && <span className="text-xs text-muted">(أنت الآن)</span>}
               </div>
               {!cloud && team.length > 1 && (
                 <button onClick={() => onRemoveMember(m.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={15} /></button>
@@ -2771,15 +1812,14 @@ alter publication supabase_realtime add table profiles;`;
             </select>
             <button
               onClick={() => { if (newName.trim()) { onAddMember(newName.trim(), newRole); setNewName(""); } }}
-              className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold text-white"
-              style={{ backgroundColor: NAVY }}
+              className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold text-white bg-navy"
             >
               <Plus size={13} /> إضافة
             </button>
           </div>
         )}
 
-        <div className="mt-3 flex items-start gap-1.5 text-xs leading-5" style={{ color: MUTED }}>
+        <div className="mt-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
           {cloud
             ? "كل مهندس بيسجّل حسابه بنفسه (بريد وكلمة سر حقيقيين)، ولازم مالك مكتب فعلي يوافق عليه من هنا قبل ما يشوف أي بيانات. الموافقة على الأدوار متحقّقة من قاعدة البيانات نفسها، مش من الواجهة فقط."
@@ -2802,22 +1842,22 @@ alter publication supabase_realtime add table profiles;`;
           <input type="number" step="0.1" className="inp" value={(local.vatPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })} />
         </Field>
-        <button onClick={() => onSave(local)} className="mt-2 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white" style={{ backgroundColor: NAVY }}>
+        <button onClick={() => onSave(local)} className="mt-2 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-navy">
           <Save size={15} /> حفظ الإعدادات
         </button>
       </div>
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-1 flex items-center gap-2 text-sm font-bold" style={{ color: NAVY }}>
+        <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
           <ShieldCheck size={16} /> النسخ الاحتياطي والحفظ الدائم
         </div>
-        <p className="mb-3 text-xs leading-6" style={{ color: MUTED }}>
+        <p className="mb-3 text-xs leading-6 text-muted">
           بيانات {clientCount} عميل محفوظة داخل هذا المتصفح على هذا الجهاز فقط (IndexedDB)، وتفضل موجودة حتى بعد إغلاق الجهاز أو قطع الإنترنت.
           لكنها لا تنتقل تلقائيًا لجهاز أو متصفح آخر — نزّل نسخة احتياطية بشكل دوري واحتفظ بها في مكان آمن (Google Drive مثلاً)،
           واستخدم "استيراد" على أي جهاز آخر لنقل نفس البيانات إليه.
         </p>
         <div className="flex flex-wrap gap-2">
-          <button onClick={onExportBackup} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white" style={{ backgroundColor: GOLD }}>
+          <button onClick={onExportBackup} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-gold">
             <Download size={15} /> تصدير نسخة احتياطية
           </button>
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold" style={{ border: `1px solid ${NAVY}`, color: NAVY }}>
