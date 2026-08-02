@@ -725,14 +725,14 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-3 text-sm font-bold text-navy">قيمة خط الأعمال حسب المرحلة</div>
+          <div className="mb-3 h-section">قيمة خط الأعمال حسب المرحلة</div>
           {stats.count > 0 ? <StageValueChart stats={stats} /> : (
             <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
           )}
         </div>
         <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-3 text-sm font-bold text-navy">نمو خط الأعمال آخر 6 أشهر</div>
-          {clients.length > 0 ? <MonthlyTrendChart clients={clients} settings={settings} /> : (
+          <div className="mb-3 h-section">نمو خط الأعمال آخر 6 أشهر</div>
+          {clients.length > 0 ? <div className="gridpaper"><MonthlyTrendChart clients={clients} settings={settings} /></div> : (
             <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
           )}
         </div>
@@ -844,32 +844,54 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
           {visible.map(c => {
             const calc = effectiveTotals(c, settings);
             return (
-              <div key={c.id} className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-                <div className="mb-2 flex items-center justify-between">
-                  <Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} />
-                  <button onClick={() => onDelete(c.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16} /></button>
+              <div key={c.id} className="sheet overflow-hidden">
+                {/* شريط المرحلة: أول ما تلتقطه العين، كما في ترميز المخططات */}
+                <div style={{ height: 3, backgroundColor: STAGE_COLORS[c.stage] || MUTED }} />
+
+                {/* كتلة العنوان — مقتبسة من ركن المخطط المعماري */}
+                <div className="titleblock">
+                  <div>
+                    <span className="tb-label">المساحة</span>
+                    <span className="tb-value">{c.area} م²</span>
+                  </div>
+                  <div>
+                    <span className="tb-label">المرحلة</span>
+                    <span className="tb-value" style={{ color: STAGE_COLORS[c.stage] || MUTED, fontSize: 11 }}>{c.stage}</span>
+                  </div>
+                  <div>
+                    <span className="tb-label">المهندس</span>
+                    <span className="tb-value" style={{ fontSize: 11 }}>{c.engineer || "—"}</span>
+                  </div>
                 </div>
-                <div className="mb-1 text-base font-bold">{c.name || "بدون اسم"}</div>
+
+                <div className="p-4">
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="text-base font-semibold text-ink">{c.name || "بدون اسم"}</div>
+                  <button onClick={() => onDelete(c.id)} className="shrink-0 text-gray-300 hover:text-red-500"><Trash2 size={15} /></button>
+                </div>
                 <div className="mb-1 flex items-center gap-1.5 text-xs text-muted"><MapPin size={12} />{c.address || "بدون عنوان"}</div>
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-muted"><Ruler size={12} />{c.area} م²</div>
-                {c.phone && <div className="mb-2 flex items-center gap-1.5 text-xs text-muted"><Phone size={12} />{c.phone}</div>}
+                {c.phone && <div className="mb-2 flex items-center gap-1.5 text-xs text-muted num"><Phone size={12} />{c.phone}</div>}
                 {(c.stage === "قيد التنفيذ" || c.progressPercent > 0) && (
                   <div className="mb-2">
                     <div className="mb-1 flex items-center justify-between text-xs font-semibold text-muted">
                       <span>نسبة الإنجاز بالموقع</span>
                       <span>{c.progressPercent || 0}%</span>
                     </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-light">
-                      <div className="h-full rounded-full" style={{ width: `${c.progressPercent || 0}%`, backgroundColor: "#1E7B45" }} />
+                    <div className="h-px w-full bg-light" style={{ height: 2 }}>
+                      <div style={{ width: `${c.progressPercent || 0}%`, height: 2, backgroundColor: "#1E7B45" }} />
                     </div>
                   </div>
                 )}
-                <div className="mb-3 rounded-lg px-3 py-2 text-center text-sm font-bold text-white bg-navy">
-                  {fmt(calc.grandTotal)} ج.م
+                <div className="mb-3 flex items-baseline justify-between border-t pt-2" style={{ borderColor: "var(--color-line)" }}>
+                  <span className="lbl">
+                    {calc.frozen ? `متعاقد عليه · ${calc.signedAt}` : "تقديري"}
+                  </span>
+                  <span className="num text-base font-semibold text-navy">{fmt(calc.grandTotal)} ج.م</span>
                 </div>
-                <button onClick={() => onSelect(c.id)} className="w-full rounded-lg py-1.5 text-sm font-semibold" style={{ border: `1px solid ${NAVY}`, color: NAVY }}>
+                <button onClick={() => onSelect(c.id)} className="w-full py-1.5 text-sm font-semibold" style={{ border: `1px solid ${NAVY}`, color: NAVY, borderRadius: 2 }}>
                   فتح التفاصيل
                 </button>
+                </div>
               </div>
             );
           })}
@@ -914,7 +936,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* left: basic info */}
         <div className="lg:col-span-1">
-          <div className="rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+          <div className="sheet p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-sm font-bold text-navy">بيانات العميل</div>
               <div className="flex items-center gap-2">
@@ -996,7 +1018,7 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
 
           {innerTab === "pricing" && (
             <>
-          <div className="rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+          <div className="sheet p-4">
             <div className="mb-3 text-sm font-bold text-navy">مستوى التشطيب لكل نطاق عمل</div>
             <div className="flex flex-col gap-3">
               {SCOPES.map(scope => (
@@ -1159,7 +1181,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                   <div className="mt-3 mb-1 text-xs font-bold text-muted">{scope}</div>
                 )}
                 <div
-                  className="grid grid-cols-12 items-center gap-2 rounded-lg px-2 py-2"
+                  className="grid grid-cols-12 items-center gap-2 px-2 py-2"
                   style={{ backgroundColor: isCustom ? "#FFFBEB" : (i % 2 ? "#FFFFFF" : LIGHT) }}
                 >
                   <div className="col-span-12 flex items-center gap-2 sm:col-span-3">
@@ -1168,7 +1190,10 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       checked={r.included}
                       onChange={e => patchItem(r.id, "included", e.target.checked)}
                     />
-                    <span className="text-xs font-semibold leading-4">{name}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold leading-4">{name}</span>
+                      <span className="code mt-0.5 inline-block">{r.id}</span>
+                    </span>
                   </div>
                   <div className="col-span-6 sm:col-span-2">
                     <input
@@ -1714,7 +1739,7 @@ alter publication supabase_realtime add table profiles;`;
     <div className="max-w-lg">
       <h2 className="mb-4 text-xl font-bold text-navy">الإعدادات العامة</h2>
 
-      <div className="rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+      <div className="sheet p-4">
         <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
           <Wifi size={16} /> المزامنة السحابية بين الأجهزة (اختياري)
         </div>
