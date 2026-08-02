@@ -201,6 +201,30 @@ drop trigger if exists audit_clients on clients;
 create trigger audit_clients after update on clients
   for each row execute procedure public.log_change();
 
-alter publication supabase_realtime add table clients;
-alter publication supabase_realtime add table client_items;
-alter publication supabase_realtime add table site_visits;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'clients'
+  ) then
+    alter publication supabase_realtime add table clients;
+  end if;
+end $$;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'client_items'
+  ) then
+    alter publication supabase_realtime add table client_items;
+  end if;
+end $$;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'site_visits'
+  ) then
+    alter publication supabase_realtime add table site_visits;
+  end if;
+end $$;
