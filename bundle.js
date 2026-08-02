@@ -250,7 +250,7 @@ create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
   name text not null default '',
-  role text not null default 'pending' check (role in ('pending','engineer','owner')),
+  role text not null default 'pending' check (role in ('pending','engineer','manager','owner')),
   created_at timestamptz not null default now()
 );
 
