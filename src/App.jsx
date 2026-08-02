@@ -12,6 +12,7 @@ import {
 } from "./data/storage.js";
 import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profiles.js";
 import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
+import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin } from "./domain/pricebook.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "./domain/catalogue.js";
 import {
@@ -271,6 +272,7 @@ function AppInner() {
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [priceBook, setPriceBook] = useState(DEFAULT_PRICEBOOK);
   const [tab, setTab] = useState("dashboard"); // dashboard | clients | settings
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -285,6 +287,7 @@ function AppInner() {
   const reloadAll = useCallback(async () => {
     const settingsVal = await storageGet("settings:global", DEFAULT_SETTINGS);
     setSettings(settingsVal);
+    setPriceBook(await storageGet("settings:pricebook", DEFAULT_PRICEBOOK));
     const keys = await storageListKeys("client:");
     const loaded = [];
     for (const k of keys) {
@@ -634,6 +637,7 @@ function AppInner() {
             ["dashboard", "لوحة المتابعة", LayoutDashboard],
             ["clients", "العملاء", Users],
             ["excelHub", "لوحة تحكم إكسل", FileSpreadsheet],
+            ...(can(currentMember, "viewCostBasis") ? [["pricebook", "دفتر الأسعار", Ruler]] : []),
             ["settings", "الإعدادات", Settings],
           ].map(([key, label, Icon]) => (
             <button
@@ -674,9 +678,18 @@ function AppInner() {
             saving={saving}
             team={team}
             currentMember={currentMember}
+            priceBook={priceBook}
             onBack={() => setSelectedId(null)}
             onChange={(patch) => updateClient(selected.id, patch)}
             onDelete={() => deleteClient(selected.id)}
+          />
+        )}
+
+        {tab === "pricebook" && (
+          <PriceBookPanel
+            book={priceBook}
+            currentMember={currentMember}
+            onSave={async (next) => { setPriceBook(next); await storageSet("settings:pricebook", next); }}
           />
         )}
 
@@ -902,8 +915,14 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
 }
 
 /* ============================= Client detail ============================= */
-function ClientDetail({ client, settings, saving, team, currentMember, onBack, onChange, onDelete }) {
+function ClientDetail({ client, settings, priceBook, saving, team, currentMember, onBack, onChange, onDelete }) {
   const calc = useMemo(() => effectiveTotals(client, settings), [client, settings]);
+  const margin = useMemo(() => {
+    if (!can(currentMember, "viewCostBasis")) return null;
+    const list = catalogueWithCustom(priceBook);
+    const rows = list.map(it => resolveItem(client, it, Number(client.area) || 0));
+    return projectMargin(priceBook, rows, Object.fromEntries(list.map(i => [i[5], i])));
+  }, [client, priceBook, currentMember]);
   const [innerTab, setInnerTab] = useState("pricing"); // pricing | site
 
   const exportExcel = () => exportFullBOQ(client, settings);
@@ -1068,10 +1087,41 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
             <div className="my-2 h-px" style={{ backgroundColor: "#2E5395" }} />
             <SummaryRow label="الإجمالي قبل الضريبة" value={calc.subtotal} bold />
             <SummaryRow label="ضريبة القيمة المضافة" value={calc.vat} />
-            <div className="mt-3 flex items-center justify-between rounded-lg px-3 py-2.5 bg-gold">
+            <div className="mt-3 flex items-center justify-between px-3 py-2.5 bg-gold" style={{ borderRadius: 2 }}>
               <span className="text-sm font-bold" style={{ color: "#1F1F1F" }}>الإجمالي النهائي المستحق</span>
-              <span className="text-lg font-bold" style={{ color: "#1F1F1F" }}>{fmt(calc.grandTotal)} ج.م</span>
+              <span className="num text-lg font-bold" style={{ color: "#1F1F1F" }}>{fmt(calc.grandTotal)} ج.م</span>
             </div>
+
+            {/* الهامش — الرقم الذي لم يكن النظام يعرفه إطلاقًا.
+                يُعرض فقط لمن يملك صلاحية رؤية التكلفة: المهندس المنفّذ لا يراه. */}
+            {can(currentMember, "viewCostBasis") && margin && (
+              <div className="sheet mt-3 p-3">
+                <div className="mb-2 flex items-baseline justify-between">
+                  <span className="lbl">هامش الربح المتوقع</span>
+                  <span
+                    className="num text-lg font-semibold"
+                    style={{ color: margin.ratio >= 0.25 ? "#1E7B45" : margin.ratio >= 0.15 ? "#B45309" : "#C00000" }}
+                  >
+                    {(margin.ratio * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mb-2 flex justify-between text-xs text-muted">
+                  <span>تكلفة تقديرية <b className="num">{fmt(margin.cost)}</b></span>
+                  <span>ربح <b className="num">{fmt(margin.profit)}</b></span>
+                </div>
+                {margin.estimatedShare > 0.05 && (
+                  <div className="text-[10px]" style={{ color: "#8A6D00" }}>
+                    ⚠︎ {(margin.estimatedShare * 100).toFixed(0)}% من هذا الرقم مبني على تكلفة مفترضة —
+                    أدخل التكاليف الحقيقية من دفتر الأسعار ليصبح موثوقًا.
+                  </div>
+                )}
+                {margin.weakItems.length > 0 && (
+                  <div className="mt-2 border-t pt-2 text-[10px]" style={{ borderColor: "var(--color-line)", color: "#C00000" }}>
+                    بنود تحت الحد الأدنى للهامش: {margin.weakItems.slice(0, 3).map(w => w.name).join(" · ")}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
             </>
           )}
@@ -1990,6 +2040,98 @@ class ErrorBoundary extends React.Component {
     }
     return this.props.children;
   }
+}
+
+
+/* ============================= دفتر الأسعار =============================
+   أثمن ما يملكه المكتب: خلاصة تكاليف كل مشروع نفّذه. كان مدفونًا في الكود
+   ولا يُعدَّل إلا بمبرمج — الآن يملكه المكتب ويحدّثه بنفسه. */
+function PriceBookPanel({ book, onSave, currentMember }) {
+  const [q, setQ] = useState("");
+  const mayEdit = can(currentMember, "editUnitPrice");
+  const list = useMemo(() => catalogueWithCustom(book), [book]);
+  const stale = useMemo(() => new Set(staleItems(book).map(x => x.id)), [book]);
+
+  const visible = list.filter(it =>
+    !q.trim() || it[1].includes(q.trim()) || it[5].toLowerCase().includes(q.trim().toLowerCase()));
+
+  const setCost = (id, levelIdx, value) => {
+    const entry = (book.items || {})[id] || {};
+    const cost = [...(entry.cost || [0, 0, 0, 0])];
+    cost[levelIdx] = Number(value) || 0;
+    onSave(updateBookItem(book, id, { cost }));
+  };
+
+  if (!mayEdit) {
+    return <div className="sheet p-6 text-center text-sm text-muted">
+      دفتر الأسعار متاح لمدير المشاريع أو مالك المكتب فقط.
+    </div>;
+  }
+
+  return (
+    <div className="sheet p-4">
+      <div className="mb-1 h-section">دفتر أسعار المكتب</div>
+      <p className="mb-3 text-xs text-muted">
+        أدخل تكلفة الوحدة لكل مستوى. بدونها يقدّر النظام التكلفة، ويظل رقم الهامش غير موثوق.
+        البند الذي لم يُحدَّث منذ 6 أشهر معلَّم — أسعار السوق تتحرك بسرعة.
+      </p>
+
+      <input className="inp mb-3" placeholder="بحث بالاسم أو الكود…" value={q} onChange={e => setQ(e.target.value)} />
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b" style={{ borderColor: "var(--color-line)" }}>
+              <th className="p-2 text-right lbl">البند</th>
+              {LEVELS.map(lv => <th key={lv} className="p-2 text-center lbl">{lv}</th>)}
+              <th className="p-2 text-center lbl">الهامش</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.slice(0, 60).map(it => {
+              const [, name, unit, , prices, id] = it;
+              const entry = (book.items || {})[id] || {};
+              const m = itemMargin(book, it, 1, prices[1]);
+              return (
+                <tr key={id} className="border-b" style={{ borderColor: "var(--color-line)" }}>
+                  <td className="p-2">
+                    <span className="block font-semibold leading-4">{name}</span>
+                    <span className="code mt-0.5 inline-block">{id}</span>
+                    {stale.has(id) && <span className="mr-1 text-[9px]" style={{ color: "#B45309" }}>غير محدَّث</span>}
+                  </td>
+                  {LEVELS.map((lv, i) => (
+                    <td key={lv} className="p-1 text-center">
+                      <div className="num text-[10px] text-muted">بيع {prices[i]}</div>
+                      <input
+                        type="number"
+                        className="num w-16 rounded px-1 py-0.5 text-center text-[11px]"
+                        style={{ border: "1px solid var(--color-line)" }}
+                        placeholder="تكلفة"
+                        value={entry.cost?.[i] || ""}
+                        onChange={e => setCost(id, i, e.target.value)}
+                      />
+                    </td>
+                  ))}
+                  <td className="p-2 text-center">
+                    <span
+                      className="num font-bold"
+                      style={{ color: m.estimated ? "#9CA3AF" : m.ratio >= 0.25 ? "#1E7B45" : m.ratio >= 0.15 ? "#B45309" : "#C00000" }}
+                    >
+                      {(m.ratio * 100).toFixed(0)}%
+                    </span>
+                    {m.estimated && <span className="block text-[9px] text-muted">مقدَّر</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {visible.length > 60 && (
+        <div className="mt-2 text-center text-xs text-muted">يُعرض 60 من {visible.length} — استخدم البحث</div>
+      )}
+    </div>
+  );
 }
 
 function StorageUnsupported() {
