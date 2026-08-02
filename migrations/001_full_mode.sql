@@ -100,19 +100,13 @@ create trigger enforce_role_change before update on profiles
 
 do $$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'kv'
-  ) then
-    alter publication supabase_realtime add table kv;
-  end if;
+  alter publication supabase_realtime add table kv;
+exception
+  when duplicate_object then null;   -- 42710: مضاف مسبقًا، نتجاهله
 end $$;
 do $$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'profiles'
-  ) then
-    alter publication supabase_realtime add table profiles;
-  end if;
+  alter publication supabase_realtime add table profiles;
+exception
+  when duplicate_object then null;   -- 42710: مضاف مسبقًا، نتجاهله
 end $$;
