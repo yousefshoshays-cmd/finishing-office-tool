@@ -6,7 +6,8 @@
   "scripts": {
     "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./public/styles.css --minify",
     "build:js": "esbuild src/main.jsx --bundle --minify --loader:.jsx=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outfile=public/bundle.js",
-    "build": "npm run build:css && npm run build:js"
+    "build": "npm run build:css && npm run build:js",
+    "test": "esbuild test/smoke.mjs --bundle --platform=node --outfile=/tmp/_s.cjs --format=cjs && node /tmp/_s.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
