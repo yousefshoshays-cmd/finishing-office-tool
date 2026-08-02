@@ -14,7 +14,10 @@ import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profile
 import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "./domain/catalogue.js";
-import { newClient, resolveItem, calcClient } from "./domain/pricing.js";
+import {
+  newClient, resolveItem, calcClient, migrateClient, progressFromVisits,
+  ownsClient, linkEngineer, buildContractSnapshot, amendContract, effectiveTotals,
+} from "./domain/pricing.js";
 import {
   NAVY, NAVY_DARK, GOLD, LIGHT, BORDER, TEXT, MUTED,
   LEVELS, LEVEL_COLORS, SCOPES, STAGES, STAGE_COLORS,
@@ -32,7 +35,7 @@ function ExcelHub({ clients, settings, onUpdate }) {
     let list = clients.filter(c => !query.trim() ||
       (c.name || "").toLowerCase().includes(query.trim().toLowerCase()) ||
       (c.engineer || "").toLowerCase().includes(query.trim().toLowerCase()));
-    const calcOf = (c) => calcClient(c, settings).grandTotal;
+    const calcOf = (c) => effectiveTotals(c, settings).grandTotal;
     switch (sortBy) {
       case "value_desc": list = [...list].sort((a, b) => calcOf(b) - calcOf(a)); break;
       case "value_asc": list = [...list].sort((a, b) => calcOf(a) - calcOf(b)); break;
@@ -98,7 +101,7 @@ function ExcelHub({ clients, settings, onUpdate }) {
             </thead>
             <tbody>
               {visible.map((c, i) => {
-                const calc = calcClient(c, settings);
+                const calc = effectiveTotals(c, settings);
                 const contractReady = c.stage === "تم التعاقد" || c.stage === "قيد التنفيذ" || c.stage === "تم التسليم";
                 return (
                   <tr key={c.id} style={{ backgroundColor: i % 2 ? "#FFFFFF" : LIGHT, borderTop: `1px solid ${BORDER}` }}>
@@ -234,7 +237,7 @@ function MonthlyTrendChart({ clients, settings }) {
     const key = (c.createdAt || "").slice(0, 7);
     if (byMonth[key]) {
       byMonth[key].count += 1;
-      byMonth[key].value += calcClient(c, settings).grandTotal;
+      byMonth[key].value += effectiveTotals(c, settings).grandTotal;
     }
   });
   const maxVal = Math.max(1, ...months.map(m => byMonth[m.key].value));
@@ -286,7 +289,9 @@ function AppInner() {
     const loaded = [];
     for (const k of keys) {
       const c = await storageGet(k, null);
-      if (c) loaded.push(c);
+      // الهجرة تحدث في الذاكرة عند القراءة، وتُحفظ عند أول تعديل.
+      // لا نكتب على القرص هنا حتى لا نلمس بيانات لم يطلب المستخدم تغييرها.
+      if (c) loaded.push(migrateClient(c));
     }
     loaded.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     setClients(loaded);
@@ -464,7 +469,10 @@ function AppInner() {
 
   const addClient = async () => {
     const c = newClient();
-    if (currentMember && currentMember.role === "engineer") c.engineer = currentMember.name;
+    if (currentMember && currentMember.role === "engineer") {
+      c.engineer = currentMember.name;
+      c.engineerId = currentMember.id;
+    }
     setClients(prev => [c, ...prev]);
     await saveClient(c);
     setSelectedId(c.id);
@@ -528,14 +536,14 @@ function AppInner() {
 
   const visibleClients = useMemo(() => {
     if (!currentMember || can(currentMember, "viewAllClients")) return clients;
-    return clients.filter(c => c.engineer === currentMember.name);
+    return clients.filter(c => ownsClient(c, currentMember));
   }, [clients, currentMember]);
 
   const pipelineStats = useMemo(() => {
     const byStage = Object.fromEntries(STAGES.map(s => [s, { count: 0, value: 0 }]));
     let totalValue = 0;
     visibleClients.forEach(c => {
-      const calc = calcClient(c, settings);
+      const calc = effectiveTotals(c, settings);
       const stage = STAGES.includes(c.stage) ? c.stage : STAGES[0];
       byStage[stage].count += 1;
       byStage[stage].value += calc.grandTotal;
@@ -748,7 +756,7 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
         {recent.length === 0 && <div className="text-sm text-muted">لا يوجد عملاء بعد — ابدأ بإضافة أول عميل.</div>}
         <div className="flex flex-col gap-2">
           {recent.map(c => {
-            const calc = calcClient(c, settings);
+            const calc = effectiveTotals(c, settings);
             return (
               <button key={c.id} onClick={() => onOpenClient(c.id)} className="flex items-center justify-between rounded-lg px-3 py-2 text-right transition-colors hover:bg-gray-50" style={{ border: `1px solid ${BORDER}` }}>
                 <div className="flex items-center gap-3">
@@ -778,7 +786,7 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
       const matchesStage = !stageFilter || c.stage === stageFilter;
       return matchesQuery && matchesStage;
     });
-    const calcOf = (c) => calcClient(c, settings).grandTotal;
+    const calcOf = (c) => effectiveTotals(c, settings).grandTotal;
     switch (sortBy) {
       case "value_desc": list = [...list].sort((a, b) => calcOf(b) - calcOf(a)); break;
       case "value_asc": list = [...list].sort((a, b) => calcOf(a) - calcOf(b)); break;
@@ -834,7 +842,7 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map(c => {
-            const calc = calcClient(c, settings);
+            const calc = effectiveTotals(c, settings);
             return (
               <div key={c.id} className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
                 <div className="mb-2 flex items-center justify-between">
@@ -873,7 +881,7 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
 
 /* ============================= Client detail ============================= */
 function ClientDetail({ client, settings, saving, team, currentMember, onBack, onChange, onDelete }) {
-  const calc = useMemo(() => calcClient(client, settings), [client, settings]);
+  const calc = useMemo(() => effectiveTotals(client, settings), [client, settings]);
   const [innerTab, setInnerTab] = useState("pricing"); // pricing | site
 
   const exportExcel = () => exportFullBOQ(client, settings);
@@ -919,14 +927,34 @@ function ClientDetail({ client, settings, saving, team, currentMember, onBack, o
             <Field label="عنوان المشروع"><input className="inp" value={client.address} onChange={e => onChange({ address: e.target.value })} /></Field>
             <Field label="المساحة (م²)"><input type="number" className="inp" value={client.area} onChange={e => onChange({ area: e.target.value })} /></Field>
             <Field label="مرحلة العميل">
-              <select className="inp" value={client.stage} onChange={e => onChange({ stage: e.target.value })}>
+              <select
+                className="inp"
+                value={client.stage}
+                onChange={e => {
+                  const stage = e.target.value;
+                  // عند أول وصول لـ"تم التعاقد" تُلتقط لقطة مجمّدة للمقايسة
+                  // والإعدادات. بعدها لا تتغير أرقام العقد مهما عُدّلت الأسعار.
+                  if (stage === "تم التعاقد" && !client.contract) {
+                    onChange({ stage, contract: buildContractSnapshot(client, settings, currentMember?.name || "") });
+                  } else {
+                    onChange({ stage });
+                  }
+                }}
+              >
                 {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </Field>
             <Field label="المهندس المسؤول">
-              <select className="inp" value={client.engineer || ""} onChange={e => onChange({ engineer: e.target.value })}>
+              <select
+                className="inp"
+                value={client.engineerId || ""}
+                onChange={e => {
+                  const m = team.find(x => x.id === e.target.value);
+                  onChange({ engineerId: e.target.value, engineer: m ? m.name : "" });
+                }}
+              >
                 <option value="">— غير محدد —</option>
-                {team.map(m => <option key={m.id} value={m.name}>{m.name}{m.role === "owner" ? " (المالك)" : ""}</option>)}
+                {team.map(m => <option key={m.id} value={m.id}>{m.name}{m.role === "owner" ? " (المالك)" : ""}</option>)}
               </select>
             </Field>
             <Field label="الأسلوب المفضل"><input className="inp" value={client.style} onChange={e => onChange({ style: e.target.value })} /></Field>
@@ -1044,44 +1072,36 @@ function FullItemBOQ({ client, onChange, currentMember }) {
   const [expanded, setExpanded] = useState(false);
   const mayEditPrice = can(currentMember, "editUnitPrice");
   const area = Number(client.area) || 0;
-  const itemIncluded = client.itemIncluded || {};
-  const itemLevel = client.itemLevel || {};
-  const itemQty = client.itemQty || {};
-  const itemPrice = client.itemPrice || {};
-  const itemPriceDate = client.itemPriceDate || {};
-  const customCount = Object.keys(itemLevel).length + Object.keys(itemQty).length +
-    Object.keys(itemIncluded).length + Object.keys(itemPrice).length;
+  const recs = client.items || {};
+  const customCount = Object.keys(recs).filter(k => Object.keys(recs[k] || {}).length > 0).length;
 
-  const setItemPatch = (mapKey, name, value) => {
-    const current = { ...(client[mapKey] || {}) };
-    if (value === undefined) delete current[name];
-    else current[name] = value;
-    onChange({ [mapKey]: current });
+  // كل التعديلات تمر من هنا: مفتاح واحد (معرّف البند) وسجل واحد.
+  // لم يعد ممكنًا أن تتفرّق قيم البند الواحد بين خرائط متوازية.
+  const patchItem = (id, field, value) => {
+    const next = { ...recs };
+    const rec = { ...(next[id] || {}) };
+    if (value === undefined || value === "") delete rec[field];
+    else rec[field] = value;
+    if (Object.keys(rec).length === 0) delete next[id];
+    else next[id] = rec;
+    onChange({ items: next });
   };
 
-  const setPriceOverride = (name, value) => {
-    const priceMap = { ...(client.itemPrice || {}) };
-    const dateMap = { ...(client.itemPriceDate || {}) };
-    if (value === "" || value === undefined) {
-      delete priceMap[name];
-      delete dateMap[name];
-    } else {
-      priceMap[name] = value;
-      dateMap[name] = new Date().toISOString().slice(0, 10);
-    }
-    onChange({ itemPrice: priceMap, itemPriceDate: dateMap });
+  const setPriceOverride = (id, value) => {
+    const next = { ...recs };
+    const rec = { ...(next[id] || {}) };
+    if (value === "" || value === undefined) { delete rec.price; delete rec.priceDate; }
+    else { rec.price = value; rec.priceDate = new Date().toISOString().slice(0, 10); }
+    if (Object.keys(rec).length === 0) delete next[id]; else next[id] = rec;
+    onChange({ items: next });
   };
 
-  const resetItem = (name) => {
-    const li = { ...(client.itemLevel || {}) }; delete li[name];
-    const ii = { ...(client.itemIncluded || {}) }; delete ii[name];
-    const iq = { ...(client.itemQty || {}) }; delete iq[name];
-    const ip = { ...(client.itemPrice || {}) }; delete ip[name];
-    const ipd = { ...(client.itemPriceDate || {}) }; delete ipd[name];
-    onChange({ itemLevel: li, itemIncluded: ii, itemQty: iq, itemPrice: ip, itemPriceDate: ipd });
+  const resetItem = (id) => {
+    const next = { ...recs }; delete next[id];
+    onChange({ items: next });
   };
 
-  const resetAll = () => onChange({ itemLevel: {}, itemIncluded: {}, itemQty: {}, itemPrice: {}, itemPriceDate: {} });
+  const resetAll = () => onChange({ items: {} });
 
   let currentScope = null;
 
@@ -1131,10 +1151,8 @@ function FullItemBOQ({ client, onChange, currentMember }) {
             const r = resolveItem(client, item, area);
             const showScopeHeader = scope !== currentScope;
             currentScope = scope;
-            const isCustom = Object.prototype.hasOwnProperty.call(itemLevel, name) ||
-              Object.prototype.hasOwnProperty.call(itemIncluded, name) ||
-              Object.prototype.hasOwnProperty.call(itemQty, name) ||
-              Object.prototype.hasOwnProperty.call(itemPrice, name);
+            const rec = recs[r.id] || {};
+            const isCustom = r.overrides.length > 0;
             return (
               <React.Fragment key={name}>
                 {showScopeHeader && (
@@ -1148,7 +1166,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                     <input
                       type="checkbox"
                       checked={r.included}
-                      onChange={e => setItemPatch("itemIncluded", name, e.target.checked)}
+                      onChange={e => patchItem(r.id, "included", e.target.checked)}
                     />
                     <span className="text-xs font-semibold leading-4">{name}</span>
                   </div>
@@ -1158,8 +1176,8 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       disabled={!r.included}
                       className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-40"
                       style={{ border: `1px solid ${BORDER}` }}
-                      value={Object.prototype.hasOwnProperty.call(itemQty, name) ? itemQty[name] : Math.round(r.qty * 100) / 100}
-                      onChange={e => setItemPatch("itemQty", name, e.target.value)}
+                      value={rec.qty !== undefined ? rec.qty : Math.round(r.qty * 100) / 100}
+                      onChange={e => patchItem(r.id, "qty", e.target.value)}
                     />
                     <span className="text-[10px] text-muted">{unit}</span>
                   </div>
@@ -1168,8 +1186,8 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       disabled={!r.included}
                       className="w-full rounded-md px-1.5 py-1 text-xs disabled:opacity-40"
                       style={{ border: `1px solid ${BORDER}` }}
-                      value={itemLevel[name] || ""}
-                      onChange={e => setItemPatch("itemLevel", name, e.target.value || undefined)}
+                      value={rec.level || ""}
+                      onChange={e => patchItem(r.id, "level", e.target.value || undefined)}
                     >
                       <option value="">افتراضي الفئة</option>
                       {LEVELS.map(lv => <option key={lv} value={lv}>{lv}</option>)}
@@ -1183,9 +1201,14 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       title={mayEditPrice ? "" : "تعديل سعر الوحدة متاح لمدير المشاريع أو مالك المكتب فقط"}
                       className="w-full rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40"
                       style={{ border: `1px solid ${r.hasPriceOverride ? "#BF9000" : BORDER}`, color: r.hasPriceOverride ? "#8A6D00" : TEXT, backgroundColor: mayEditPrice ? "transparent" : "#F5F7FA", cursor: mayEditPrice ? "auto" : "not-allowed" }}
-                      value={Object.prototype.hasOwnProperty.call(itemPrice, name) ? itemPrice[name] : Math.round(r.price)}
-                      onChange={e => { if (mayEditPrice) setPriceOverride(name, e.target.value); }}
+                      value={rec.price !== undefined ? rec.price : Math.round(r.price)}
+                      onChange={e => { if (mayEditPrice) setPriceOverride(r.id, e.target.value); }}
                     />
+                    {r.overrides.length > 0 && (
+                      <span className="text-[9px] font-semibold" style={{ color: "#8A6D00" }}>
+                        تجاوز فردي: {r.overrides.join(" · ")} — يتخطى إعداد الفئة ({r.scopeLevel})
+                      </span>
+                    )}
                     {r.hasPriceOverride && (
                       <span className="text-[9px] text-muted">
                         كان {fmt(r.basePrice)} — عُدّل {r.priceDate}
@@ -1197,7 +1220,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                   </div>
                   <div className="col-span-4 text-left sm:col-span-1">
                     {isCustom && (
-                      <button onClick={() => resetItem(name)} title="إعادة الافتراضي" className="text-xs" style={{ color: "#C00000" }}>↺</button>
+                      <button onClick={() => resetItem(r.id)} title="إعادة الافتراضي" className="text-xs" style={{ color: "#C00000" }}>↺</button>
                     )}
                   </div>
                 </div>
@@ -1226,12 +1249,20 @@ function SiteVisitLog({ client, onChange }) {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { setDraft(newVisit(client.id)); setShowForm(false); }, [client.id]);
 
+  // التقدّم يُشتق دائمًا من أحدث زيارة — لا يرتفع فقط، بل يعكس الواقع.
+  // تصحيح نسبة خاطئة أو حذف زيارة يُرجع الرقم كما ينبغي.
+  const syncProgress = async () => {
+    const all = await loadVisits(client.id);
+    const { percent, lastVisitAt } = progressFromVisits(all);
+    if (percent !== (client.progressPercent || 0) || lastVisitAt !== (client.lastVisitAt || "")) {
+      onChange({ progressPercent: percent, lastVisitAt });
+    }
+  };
+
   const submitVisit = async () => {
     const visit = { ...draft, percent: Number(draft.percent) || 0 };
     await saveVisit(visit);
-    if (visit.percent >= (client.progressPercent || 0)) {
-      onChange({ progressPercent: visit.percent, lastVisitAt: visit.date });
-    }
+    await syncProgress();
     setDraft(newVisit(client.id));
     setShowForm(false);
     reload();
@@ -1239,6 +1270,7 @@ function SiteVisitLog({ client, onChange }) {
 
   const removeVisit = async (id) => {
     await deleteVisitEntry(client.id, id);
+    await syncProgress();
     reload();
   };
 
