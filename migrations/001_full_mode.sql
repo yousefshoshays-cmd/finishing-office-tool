@@ -23,6 +23,11 @@ create table if not exists profiles (
   created_at timestamptz not null default now()
 );
 
+-- ---------- توافق مع نسخة سابقة قد تكون طُبّقت بدون دور المدير ----------
+alter table profiles drop constraint if exists profiles_role_check;
+alter table profiles add constraint profiles_role_check
+  check (role in ('pending','engineer','manager','owner'));
+
 -- first person ever to sign up becomes owner automatically; everyone after
 -- starts 'pending' until an existing owner approves them from the app
 create or replace function public.handle_new_user()
@@ -93,10 +98,21 @@ drop trigger if exists enforce_role_change on profiles;
 create trigger enforce_role_change before update on profiles
   for each row execute procedure public.prevent_self_role_escalation();
 
-alter publication supabase_realtime add table kv;
-alter publication supabase_realtime add table profiles;
-
--- ---------- توافق مع نسخة سابقة قد تكون طُبّقت بدون دور المدير ----------
-alter table profiles drop constraint if exists profiles_role_check;
-alter table profiles add constraint profiles_role_check
-  check (role in ('pending','engineer','manager','owner'));
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'kv'
+  ) then
+    alter publication supabase_realtime add table kv;
+  end if;
+end $$;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'profiles'
+  ) then
+    alter publication supabase_realtime add table profiles;
+  end if;
+end $$;
