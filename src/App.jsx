@@ -12,7 +12,13 @@ import {
 } from "./data/storage.js";
 import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profiles.js";
 import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
-import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin } from "./domain/pricebook.js";
+import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin, marginHealth, newCustomItem } from "./domain/pricebook.js";
+import {
+  VARIATION_STATUS, newVariation, variationTotal, contractValue,
+  newReceipt, paymentPlan, newExpense, budgetVariance, projectCashPosition,
+} from "./domain/finance.js";
+import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, suggestedQuantities, applySuggestions } from "./domain/rooms.js";
+import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "./domain/catalogue.js";
 import {
@@ -273,7 +279,7 @@ function AppInner() {
   const [clients, setClients] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [priceBook, setPriceBook] = useState(DEFAULT_PRICEBOOK);
-  const [tab, setTab] = useState("dashboard"); // dashboard | clients | settings
+  const [tab, setTab] = useState("dashboard"); // dashboard | clients | pricebook | settings
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -470,8 +476,9 @@ function AppInner() {
     });
   };
 
-  const addClient = async () => {
-    const c = newClient();
+  // القالب اختياري: بدونه عميل فارغ، ومعه مقايسة كاملة جاهزة للتعديل
+  const addClient = async (template = null) => {
+    const c = template ? clientFromTemplate(template) : newClient();
     if (currentMember && currentMember.role === "engineer") {
       c.engineer = currentMember.name;
       c.engineerId = currentMember.id;
@@ -480,7 +487,7 @@ function AppInner() {
     await saveClient(c);
     setSelectedId(c.id);
     setTab("clients");
-    showToast("تمت إضافة عميل جديد");
+    showToast(template ? `عميل جديد من قالب "${template.name}"` : "تمت إضافة عميل جديد");
   };
 
   const deleteClient = async (id) => {
@@ -814,9 +821,22 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xl font-bold text-navy">العملاء ({visible.length}{visible.length !== clients.length ? ` من ${clients.length}` : ""})</h2>
-        <button onClick={onAdd} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm bg-navy">
-          <Plus size={16} /> عميل جديد
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button onClick={() => onAdd()} className="btn btn-primary">
+            <Plus size={15} /> عميل فارغ
+          </button>
+          {TEMPLATES.map(t => (
+            <button
+              key={t.id || t.name}
+              onClick={() => onAdd(t)}
+              className="btn"
+              style={{ border: "1px solid var(--color-line)", color: NAVY, background: "#FFFFFF" }}
+              title={`${t.area} م² — مقايسة جاهزة`}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {clients.length > 0 && (
@@ -915,6 +935,190 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
 }
 
 /* ============================= Client detail ============================= */
+/* ═══════════ اللوحة المالية ═══════════
+   الطبقة التي كانت غائبة: ما قيمة العقد بعد التغييرات؟ كم حُصِّل؟ كم صُرف؟
+   تظهر بعد التعاقد فقط — قبله لا يوجد رقم ملزم يُقاس عليه. */
+/* ═══════════ جدول الغرف ═══════════
+   المعماري يفكر بالغرف لا بالبنود. تُدخل الغرف مرة، فتُشتق منها كميات
+   الأرضيات والسكيرتنج وسيراميك الحوائط والأسقف تلقائيًا.
+   الربط بأكواد البنود الثابتة — ولهذا كان إصلاح المعرّفات شرطًا لهذه الميزة. */
+function RoomSchedule({ client, onChange }) {
+  const rooms = client.rooms || [];
+  const q = deriveQuantities(rooms);
+  const setRooms = (next) => onChange({ rooms: next });
+
+  const apply = (force) => {
+    const res = applySuggestions({ ...client, rooms }, rooms, { force });
+    onChange({ items: res.client.items, area: q.floorArea || client.area });
+  };
+
+  return (
+    <div className="sheet mt-4 p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="h-section">جدول الغرف</span>
+        <button onClick={() => setRooms([...rooms, newRoom(rooms.length + 1)])} className="btn btn-primary">
+          <Plus size={14} /> غرفة
+        </button>
+      </div>
+
+      {rooms.length === 0 ? (
+        <div className="py-4 text-center text-xs text-muted">
+          أدخل الغرف ومقاساتها، فتُحسب كميات الأرضيات والسكيرتنج وسيراميك الحمامات تلقائيًا.
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2">
+            {rooms.map((r, i) => {
+              const m = roomMetrics(r);
+              return (
+                <div key={r.id || i} className="flex flex-wrap items-center gap-2">
+                  <input className="inp" style={{ width: 120 }} placeholder="الاسم"
+                    value={r.name || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                  <select className="inp" style={{ width: 110 }} value={r.type}
+                    onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, type: e.target.value } : x))}>
+                    {Object.keys(ROOM_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input className="inp num" style={{ width: 74 }} type="number" placeholder="طول"
+                    value={r.length || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, length: Number(e.target.value) || 0 } : x))} />
+                  <input className="inp num" style={{ width: 74 }} type="number" placeholder="عرض"
+                    value={r.width || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, width: Number(e.target.value) || 0 } : x))} />
+                  <span className="num text-xs text-muted" style={{ width: 70 }}>{m.area} م²</span>
+                  <button onClick={() => setRooms(rooms.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 sm:grid-cols-4" style={{ borderColor: "var(--color-line)" }}>
+            <div><span className="lbl">أرضيات</span><span className="tb-value">{q.floorArea} م²</span></div>
+            <div><span className="lbl">سكيرتنج</span><span className="tb-value">{q.dryPerimeter} م</span></div>
+            <div><span className="lbl">حوائط رطبة</span><span className="tb-value">{q.wetWallArea} م²</span></div>
+            <div><span className="lbl">حمامات</span><span className="tb-value">{q.bathrooms}</span></div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={() => apply(false)} className="btn btn-gold">تطبيق على المقايسة</button>
+            <button onClick={() => apply(true)} className="btn" style={{ border: "1px solid var(--color-line)", color: NAVY }}>
+              تطبيق واستبدال اليدوي
+            </button>
+          </div>
+          <div className="mt-1.5 text-[10px] text-muted">
+            التطبيق العادي لا يمس أي كمية أدخلتها بنفسك — الاستبدال يدهسها.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FinancePanel({ client, rows, currentMember, onChange }) {
+  const maySeeCost = can(currentMember, "viewCostBasis");
+  const cv = contractValue(client);
+  const plan = paymentPlan(client);
+  const variance = maySeeCost ? budgetVariance(client, rows) : null;
+
+  const addVariation = () => {
+    const list = [...(client.variations || [])];
+    onChange({ variations: [...list, newVariation(client.id, list.length + 1)] });
+  };
+  const patchVariation = (id, patch) => {
+    onChange({ variations: (client.variations || []).map(v => v.id === id ? { ...v, ...patch } : v) });
+  };
+  const addReceipt = () => {
+    const list = [...(client.receipts || [])];
+    onChange({ receipts: [...list, newReceipt(client.id, list.length + 1)] });
+  };
+  const patchReceipt = (id, patch) => {
+    onChange({ receipts: (client.receipts || []).map(r => r.id === id ? { ...r, ...patch } : r) });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* قيمة العقد */}
+      <div className="sheet p-4">
+        <div className="mb-3 h-section">قيمة العقد</div>
+        <SummaryRow label={`الأصل — متعاقد ${client.contract.signedAt}`} value={fmt(cv.base) + " ج.م"} />
+        <SummaryRow label="أوامر تغيير معتمدة" value={(cv.variations >= 0 ? "+" : "") + fmt(cv.variations) + " ج.م"} />
+        <SummaryRow label="القيمة الحالية" value={fmt(cv.total) + " ج.م"} bold />
+        {cv.pendingCount > 0 && (
+          <div className="mt-2 text-xs" style={{ color: "#B45309" }}>
+            {cv.pendingCount} أمر تغيير بانتظار موافقة العميل بقيمة {fmt(cv.pendingValue)} ج.م — غير محتسبة أعلاه
+          </div>
+        )}
+      </div>
+
+      {/* أوامر التغيير */}
+      <div className="sheet p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="h-section">أوامر التغيير</span>
+          <button onClick={addVariation} className="btn btn-gold"><Plus size={14} /> أمر جديد</button>
+        </div>
+        {(client.variations || []).length === 0 ? (
+          <div className="py-4 text-center text-xs text-muted">
+            لا توجد أوامر تغيير. سجّل هنا أي طلب من العميل بعد التعاقد ليُوثَّق بقيمته وتاريخه.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {(client.variations || []).map(v => (
+              <div key={v.id} className="flex flex-wrap items-center gap-2 border-b pb-2" style={{ borderColor: "var(--color-line)" }}>
+                <input className="inp flex-1" style={{ minWidth: 140 }} placeholder="وصف التغيير"
+                  value={v.title || ""} onChange={e => patchVariation(v.id, { title: e.target.value })} />
+                <input className="inp num" style={{ width: 110 }} type="number" placeholder="القيمة"
+                  value={v.lines?.[0]?.price ?? ""} disabled={!maySeeCost}
+                  onChange={e => patchVariation(v.id, { lines: [{ name: v.title || "تغيير", qty: 1, price: Number(e.target.value) || 0 }] })} />
+                <select className="inp" style={{ width: 150 }} value={v.status}
+                  onChange={e => patchVariation(v.id, { status: e.target.value })}>
+                  {Object.entries(VARIATION_STATUS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                </select>
+                <span className="num text-xs font-bold text-navy" style={{ width: 90 }}>{fmt(variationTotal(v))} ج.م</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* التحصيل */}
+      <div className="sheet p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="h-section">التحصيل</span>
+          <button onClick={addReceipt} className="btn btn-primary"><Plus size={14} /> دفعة</button>
+        </div>
+        <SummaryRow label="المحصّل" value={fmt(plan.collected) + " ج.م"} />
+        <SummaryRow label="المتبقي" value={fmt(plan.outstanding) + " ج.م"} bold />
+        <div className="mt-2 h-1 w-full bg-light">
+          <div style={{ height: 4, width: `${cv.total > 0 ? Math.min(100, (plan.collected / cv.total) * 100) : 0}%`, backgroundColor: "#1E7B45" }} />
+        </div>
+        {(client.receipts || []).length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {(client.receipts || []).map(r => (
+              <div key={r.id} className="flex flex-wrap items-center gap-2">
+                <input className="inp" style={{ width: 140 }} type="date"
+                  value={r.date || ""} onChange={e => patchReceipt(r.id, { date: e.target.value })} />
+                <input className="inp num flex-1" style={{ minWidth: 100 }} type="number" placeholder="المبلغ"
+                  value={r.amount || ""} onChange={e => patchReceipt(r.id, { amount: Number(e.target.value) || 0 })} />
+                <input className="inp flex-1" style={{ minWidth: 120 }} placeholder="ملاحظة"
+                  value={r.note || ""} onChange={e => patchReceipt(r.id, { note: e.target.value })} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* الفعلي مقابل المخطط — للمالك والمدير فقط */}
+      {maySeeCost && variance && (
+        <div className="sheet p-4">
+          <div className="mb-3 h-section">الفعلي مقابل المخطط</div>
+          <div className="text-xs text-muted">
+            سجّل مصروفات المشروع لتقارن المنصرف الفعلي بميزانية كل بند.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientDetail({ client, settings, priceBook, saving, team, currentMember, onBack, onChange, onDelete }) {
   const calc = useMemo(() => effectiveTotals(client, settings), [client, settings]);
   const margin = useMemo(() => {
@@ -1033,7 +1237,25 @@ function ClientDetail({ client, settings, priceBook, saving, team, currentMember
             >
               سجل متابعة الموقع{client.progressPercent > 0 ? ` (${client.progressPercent}%)` : ""}
             </button>
+            {client.contract && (
+              <button
+                onClick={() => setInnerTab("finance")}
+                className="flex-1 rounded-md py-2 text-sm font-bold transition-colors"
+                style={{ backgroundColor: innerTab === "finance" ? NAVY : "transparent", color: innerTab === "finance" ? "#FFFFFF" : TEXT }}
+              >
+                المالية
+              </button>
+            )}
           </div>
+
+          {innerTab === "finance" && client.contract && (
+            <FinancePanel
+              client={client}
+              rows={ITEMS.map(it => resolveItem(client, it, Number(client.area) || 0))}
+              currentMember={currentMember}
+              onChange={onChange}
+            />
+          )}
 
           {innerTab === "pricing" && (
             <>
@@ -1075,6 +1297,7 @@ function ClientDetail({ client, settings, priceBook, saving, team, currentMember
             </div>
           </div>
 
+          <RoomSchedule client={client} onChange={onChange} />
           <FullItemBOQ client={client} onChange={onChange} currentMember={currentMember} />
 
           <div className="mt-4 rounded-xl p-4 bg-navy">
@@ -1098,21 +1321,30 @@ function ClientDetail({ client, settings, priceBook, saving, team, currentMember
               <div className="sheet mt-3 p-3">
                 <div className="mb-2 flex items-baseline justify-between">
                   <span className="lbl">هامش الربح المتوقع</span>
-                  <span
-                    className="num text-lg font-semibold"
-                    style={{ color: margin.ratio >= 0.25 ? "#1E7B45" : margin.ratio >= 0.15 ? "#B45309" : "#C00000" }}
-                  >
-                    {(margin.ratio * 100).toFixed(1)}%
-                  </span>
+                  {margin.ratio == null ? (
+                    <span className="text-sm font-semibold text-muted">غير معروف</span>
+                  ) : (
+                    <span
+                      className="num text-lg font-semibold"
+                      style={{ color: marginHealth(margin.ratio, priceBook.minMargin) === "ok" ? "#1E7B45"
+                             : marginHealth(margin.ratio, priceBook.minMargin) === "thin" ? "#B45309" : "#C00000" }}
+                    >
+                      {(margin.ratio * 100).toFixed(1)}%
+                    </span>
+                  )}
                 </div>
-                <div className="mb-2 flex justify-between text-xs text-muted">
-                  <span>تكلفة تقديرية <b className="num">{fmt(margin.cost)}</b></span>
-                  <span>ربح <b className="num">{fmt(margin.profit)}</b></span>
-                </div>
-                {margin.estimatedShare > 0.05 && (
+                {margin.ratio != null && (
+                  <div className="mb-2 flex justify-between text-xs text-muted">
+                    <span>تكلفة <b className="num">{fmt(margin.cost)}</b></span>
+                    <span>ربح <b className="num">{fmt(margin.profit)}</b></span>
+                  </div>
+                )}
+                {/* الصدق هنا أهم من الرقم: نقول بوضوح كم من المشروع نعرف تكلفته */}
+                {!margin.complete && (
                   <div className="text-[10px]" style={{ color: "#8A6D00" }}>
-                    ⚠︎ {(margin.estimatedShare * 100).toFixed(0)}% من هذا الرقم مبني على تكلفة مفترضة —
-                    أدخل التكاليف الحقيقية من دفتر الأسعار ليصبح موثوقًا.
+                    {margin.coverage === 0
+                      ? `لا توجد تكاليف مُدخلة — ${margin.unknownItems.length} بندًا. أدخلها من دفتر الأسعار.`
+                      : `الهامش يخص ${(margin.coverage * 100).toFixed(0)}% من قيمة المشروع فقط — ${margin.unknownItems.length} بندًا بلا تكلفة.`}
                   </div>
                 )}
                 {margin.weakItems.length > 0 && (
@@ -2113,13 +2345,17 @@ function PriceBookPanel({ book, onSave, currentMember }) {
                     </td>
                   ))}
                   <td className="p-2 text-center">
-                    <span
-                      className="num font-bold"
-                      style={{ color: m.estimated ? "#9CA3AF" : m.ratio >= 0.25 ? "#1E7B45" : m.ratio >= 0.15 ? "#B45309" : "#C00000" }}
-                    >
-                      {(m.ratio * 100).toFixed(0)}%
-                    </span>
-                    {m.estimated && <span className="block text-[9px] text-muted">مقدَّر</span>}
+                    {m.known ? (
+                      <span
+                        className="num font-bold"
+                        style={{ color: marginHealth(m.ratio, book.minMargin) === "ok" ? "#1E7B45"
+                               : marginHealth(m.ratio, book.minMargin) === "thin" ? "#B45309" : "#C00000" }}
+                      >
+                        {(m.ratio * 100).toFixed(0)}%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted">—</span>
+                    )}
                   </td>
                 </tr>
               );
