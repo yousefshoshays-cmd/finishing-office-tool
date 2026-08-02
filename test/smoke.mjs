@@ -8,6 +8,9 @@ import * as pb from "../src/domain/pricebook.js";
 import * as fin from "../src/domain/finance.js";
 import * as rm from "../src/domain/rooms.js";
 import * as tpl from "../src/domain/templates.js";
+import * as sg from "../src/domain/suggest.js";
+import * as imp from "../src/domain/importSchedule.js";
+import * as led from "../src/export/ledger.js";
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { cond ? pass++ : fail++; console.log((cond ? "✅" : "❌") + " " + msg); };
@@ -200,6 +203,84 @@ console.log("\n── ٦. القوالب ──");
     ok(Object.values(c6.scopeIncluded).some(v => v === false), `"${designOnly.name}" يستبعد نطاقات فعلًا`);
   }
 }
+
+console.log("\n── اقتراح الأسعار من التاريخ ──");
+{
+  const ID = ITEMS[12][5], book = pb.DEFAULT_PRICEBOOK;
+  const mk = (id, price, date) => ({ ...newClient(), id, name: "م"+id, items: { [ID]: { price, priceDate: date } } });
+
+  ok(!sg.suggestPrice([], ITEMS[12], 1, book).hasSuggestion, "بلا تاريخ: لا اقتراح");
+  ok(!sg.suggestPrice([mk("a",700,"2026-07-01")], ITEMS[12], 1, book).hasSuggestion,
+     "مشروع واحد: لا اقتراح — رقم واحد ليس نمطًا");
+
+  const hist = [mk("a",700,"2026-07-01"), mk("b",720,"2026-07-10"), mk("c",710,"2026-07-20")];
+  const s1 = sg.suggestPrice(hist, ITEMS[12], 1, book);
+  ok(s1.hasSuggestion && s1.suggested === 710, `الوسيط = ${s1.suggested} من 3 مشاريع`);
+  ok(s1.min === 700 && s1.max === 720, "المدى معروض للحكم");
+
+  // شاذ واحد لا يجرّ الاقتراح — وهذا الفرق بين الوسيط والمتوسط
+  const withOutlier = [...hist, mk("d",50,"2026-07-25")];
+  const s2 = sg.suggestPrice(withOutlier, ITEMS[12], 1, book);
+  const mean = (700+720+710+50)/4;
+  ok(s2.suggested === 705 && s2.suggested > mean, `خصم شاذ 50: الوسيط ${s2.suggested} صمد (المتوسط كان ${Math.round(mean)})`);
+
+  ok(s1.staleCatalogue === true && s1.catalogue === 550, `انحراف عن الكتالوج ${(s1.drift*100).toFixed(0)}% ← تنبيه`);
+  const drift = sg.catalogueDriftReport(hist, ITEMS, book, 1);
+  ok(drift.length === 1 && drift[0].id === ID, "تقرير الانحراف يرصد البند");
+
+  const bad = { ...newClient(), id: "x", area: 150, items: { [ID]: { price: 5500 } } };
+  const out = sg.priceOutliers(bad, ITEMS, hist, book);
+  ok(out.length === 1 && out[0].entered === 5500, `شذوذ إدخال مرصود: 5500 مقابل ${out[0].reference}`);
+  const okc = { ...newClient(), id: "y", area: 150, items: { [ID]: { price: 715 } } };
+  ok(sg.priceOutliers(okc, ITEMS, hist, book).length === 0, "سعر معقول لا يُنبَّه عليه");
+}
+
+console.log("\n── استيراد جدول الغرف (BIM) ──");
+{
+  // مخرجات Revit نموذجية: إنجليزية، مساحة بلا أبعاد
+  const revit = imp.parseCSV('Room Name,Department,Area\n"Living 01",Living,30\n"Bathroom 1",Toilet,4.5\n"Master Bed",Bedroom,18\n');
+  const r1 = imp.parseSchedule(revit);
+  ok(r1.rooms.length === 3, `3 غرف من مخرجات Revit`);
+  ok(r1.rooms[1].type === "حمام", `"Bathroom 1" ← ${r1.rooms[1].type}`);
+  ok(r1.rooms[0].type === "صالة" && r1.rooms[2].type === "غرفة نوم", "الأنواع مستنتَجة من الأسماء الإنجليزية");
+  ok(r1.rooms.every(r => r.derivedDimensions), "الأبعاد مشتقة من المساحة");
+  ok(r1.warnings.some(w => w.includes("مربعة")), "والمستخدم مُنبَّه لذلك صراحةً");
+  ok(Math.abs(rm.deriveQuantities(r1.rooms).floorArea - 52.5) < 0.1, "المساحة الإجمالية دقيقة 52.5 م²");
+
+  // جدول عربي بأبعاد صريحة
+  const ar = imp.parseCSV('اسم الغرفة,النوع,الطول,العرض\nصالة,صالة,6,5\nحمام,حمام,2,2\n');
+  const r2 = imp.parseSchedule(ar);
+  ok(r2.rooms.length === 2 && !r2.rooms[0].derivedDimensions, "أعمدة عربية بأبعاد صريحة");
+  ok(Math.abs(rm.deriveQuantities(r2.rooms).dryPerimeter - 22) < 0.01, "المحيط دقيق 22 م");
+
+  ok(imp.parseSchedule(imp.parseCSV('اسم\nصالة\n')).rooms.length === 0, "بلا مساحة: يرفض بوضوح");
+  ok(imp.parseCSV('a,"b,c",d\n')[0].length === 3, "فاصلة داخل حقل مقتبس تُعالَج");
+}
+
+console.log("\n── دفتر الأستاذ ──");
+{
+  const c = { ...newClient(), id: "L1", name: "عميل أ", area: 150, stage: "تم التعاقد" };
+  c.contract = buildContractSnapshot(c, DEFAULT_SETTINGS, "يوسف");
+  c.variations = [{ ...fin.newVariation(c.id,1), status:"approved", date:"2026-07-05", title:"رخام",
+                    lines:[{name:"رخام",qty:10,price:1200}] }];
+  c.receipts = [{ ...fin.newReceipt(c.id,1), amount:200000, date:"2026-07-10" }];
+  c.expenses = [{ ...fin.newExpense(c.id,1), amount:80000, date:"2026-07-12", vendor:"مورّد رخام" }];
+
+  const rows = led.ledgerEntries([c]);
+  ok(rows.length === 4, `4 حركات: عقد + تغيير + تحصيل + مصروف`);
+  ok(rows[0].date <= rows[rows.length-1].date, "مرتّبة زمنيًا");
+  ok(rows.find(r => r.type === "مصروف").credit === -80000, "المصروف سالب في عمود النقد");
+  ok(rows.find(r => r.type === "تحصيل").credit === 200000, "التحصيل موجب");
+
+  const sum = led.ledgerSummary([c]);
+  ok(Math.abs(sum.netCash - 120000) < 1, `الصافي النقدي ${fmt(sum.netCash)} = 200,000 − 80,000`);
+  ok(Math.abs(sum.contracted - (c.contract.totals.grandTotal + 12000)) < 1, "المتعاقد يشمل التغيير المعتمد");
+
+  const csv = led.ledgerCSV([c]);
+  ok(csv.startsWith("\uFEFF"), "CSV يبدأ بـ BOM ليقرأ إكسل العربية");
+  ok(csv.split("\r\n").length === 5, "سطر عناوين + 4 حركات");
+}
+
 
 console.log(`\n${"─".repeat(44)}\nنجح ${pass} · فشل ${fail}`);
 process.exit(fail ? 1 : 0);
