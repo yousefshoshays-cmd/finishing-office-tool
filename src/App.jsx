@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback , useRef} from "react";
 import {
   Users, LayoutDashboard, Settings, Plus, Trash2, Download,
   Phone, MapPin, Ruler, ChevronLeft, Save, X, AlertCircle, Loader2,
@@ -13,6 +13,10 @@ import {
 import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profiles.js";
 import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
 import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin, marginHealth, newCustomItem } from "./domain/pricebook.js";
+/* كانت هاتان الدالتان تُستخدمان دون استيراد — تبويب دفتر الأسعار كان ينهار عند كل فتح. */
+import { catalogueDriftReport, priceOutliers } from "./domain/suggest.js";
+import { fetchLicense, licenseNotice, LICENSE_UNKNOWN } from "./data/license.js";
+import { parseSchedule, parseCSV } from "./domain/importSchedule.js";
 import {
   PAYMENT_STAGES,
   VARIATION_STATUS, newVariation, variationTotal, contractValue,
@@ -41,6 +45,7 @@ const generateContractDocx = async (...a) => (await loadDocx()).generateContract
 const downloadDocx = async (...a) => (await loadDocx()).downloadDocx(...a);
 const buildAndDownloadClientPptx = async (...a) => (await loadPptx()).buildAndDownloadClientPptx(...a);
 const exportFullBOQ = async (...a) => (await loadExcel()).exportFullBOQ(...a);
+const exportLedger = async (...a) => (await import("./export/ledger.js")).exportLedger(...a);
 const exportPipelineSummary = async (...a) => (await loadExcel()).exportPipelineSummary(...a);
 
 /* ============================= Excel control hub ============================= */
@@ -99,7 +104,77 @@ function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger,
   );
 }
 
-function ExcelHub({ clients, settings, onUpdate }) {
+
+/* ── شريط حالة الترخيص ─────────────────────────────────────────────────────
+   يظهر أعلى التطبيق. رسالته تتدرّج: معلومة → تحذير → إنذار.
+   لا يمنع الاستخدام بنفسه؛ المنع في قاعدة البيانات. */
+function LicenseBanner({ license }) {
+  const notice = licenseNotice(license);
+  if (!notice) return null;
+  const tones = {
+    info:  { bg: "#EFF6FF", fg: "#1E40AF" },
+    warn:  { bg: "#FFF7E6", fg: "#8A6D00" },
+    error: { bg: "#FEF2F2", fg: "#B42318" },
+  };
+  const t = tones[notice.tone] || tones.info;
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 text-center text-xs font-semibold"
+         style={{ backgroundColor: t.bg, color: t.fg }}>
+      <AlertCircle size={14} className="shrink-0" />
+      <span>{notice.text}</span>
+      {!license.canWrite && (
+        <a href="https://wa.me/" target="_blank" rel="noreferrer"
+           className="rounded-md px-2.5 py-1 text-[11px] font-bold text-white"
+           style={{ backgroundColor: t.fg }}>
+          تفعيل الاشتراك
+        </a>
+      )}
+    </div>
+  );
+}
+
+/* ── دعوة الفريق: كود المكتب ───────────────────────────────────────────────
+   يراه المالك فقط. زملاؤه يكتبونه عند التسجيل فينضمّون لمكتبه لا لمكتب آخر. */
+function TeamInvite({ license }) {
+  const [copied, setCopied] = useState(false);
+  if (!license?.inviteCode) return null;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(license.inviteCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch { /* المتصفح منع النسخ — الكود ظاهر ليُكتب يدويًا */ }
+  };
+  return (
+    <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+      <div className="mb-2 h-section">دعوة فريق المكتب</div>
+      <p className="mb-3 text-xs leading-5 text-muted">
+        شارك هذا الكود مع مهندسي مكتبك. يكتبونه عند إنشاء حساب فينضمّون لمكتبك،
+        ثم تعتمدهم من صفحة الفريق. لا تنشره علنًا.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <code className="rounded-lg px-3 py-2 text-base font-bold tracking-widest"
+              style={{ backgroundColor: "#F1F5F9", color: NAVY }}>
+          {license.inviteCode}
+        </code>
+        <button onClick={copy} className="rounded-lg px-3 py-2 text-xs font-bold"
+                style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
+          {copied ? "✓ تم النسخ" : "نسخ"}
+        </button>
+        <span className="text-xs text-muted">
+          الأعضاء: {license.membersCount} من {license.seats} مقعدًا
+        </span>
+      </div>
+      {license.membersCount >= license.seats && (
+        <div className="mt-2 text-xs font-semibold" style={{ color: "#8A6D00" }}>
+          اكتمل عدد المقاعد — تواصل معنا لزيادتها قبل إضافة عضو جديد.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientsTable({ clients, settings, onUpdate }) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
 
@@ -131,8 +206,8 @@ function ExcelHub({ clients, settings, onUpdate }) {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl font-bold text-navy">لوحة تحكم إكسل — كل ملفات كل عميل في مكان واحد</h2>
-          <p className="mt-1 text-xs text-muted">مقايسة Excel كاملة، رابط مجلد الملفات (العقد والعرض التقديمي ونموذج التسليم)، وتصدير ملخص شامل.</p>
+          <h2 className="text-xl font-bold text-navy">ملفات ومستندات العملاء</h2>
+          <p className="mt-1 text-xs text-muted">مقايسة، عقد، عرض تقديمي وكشف حركة — لكل عميل، من مكان واحد.</p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <button onClick={() => exportPipelineSummary(clients, settings)} className="btn btn-primary">
@@ -356,6 +431,12 @@ function AppInner() {
   const [toast, setToast] = useState(null);
   const [errorToast, setErrorToast] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [license, setLicense] = useState(LICENSE_UNKNOWN);
+  /* readOnly: الاشتراك منتهٍ. الأزرار تختفي، والكتابة مرفوضة من قاعدة البيانات أصلًا. */
+  const readOnly = license.loaded && !license.canWrite;
+  /* مرجع حتى تراه الدوال المحفوظة بـ useCallback دون إعادة إنشائها */
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   const [team, setTeam] = useState([]);
   const [pendingMembers, setPendingMembers] = useState([]);
   const [currentMember, setCurrentMember] = useState(null);
@@ -528,6 +609,12 @@ function AppInner() {
     }
   };
 
+  useEffect(() => {
+    let alive = true;
+    fetchLicense().then(l => { if (alive) setLicense(l); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
   const showError = (msg) => { setErrorToast(msg); setTimeout(() => setErrorToast(null), 5000); };
 
@@ -546,6 +633,11 @@ function AppInner() {
   }, []);
 
   const saveClient = useCallback(async (client) => {
+    if (readOnlyRef.current) {
+      setErrorToast("الاشتراك منتهٍ — لا يمكن الحفظ. يمكنك التصدير والاحتفاظ ببياناتك.");
+      setTimeout(() => setErrorToast(null), 5000);
+      return;
+    }
     setSaving(true);
     try {
       await storageSet("client:" + client.id, client);
@@ -760,7 +852,6 @@ function AppInner() {
           {[
             ["dashboard", "لوحة المتابعة", LayoutDashboard],
             ["clients", "العملاء", Users],
-            ["excelHub", "لوحة تحكم إكسل", FileSpreadsheet],
             ...(can(currentMember, "viewCostBasis") ? [["pricebook", "دفتر الأسعار", Ruler]] : []),
             ["settings", "الإعدادات", Settings],
           ].map(([key, label, Icon]) => (
@@ -811,13 +902,22 @@ function AppInner() {
         onCancel={() => setConfirmState(null)}
       />
 
+      <LicenseBanner license={license} />
+
       <div className="p-3 sm:p-6">
         {tab === "dashboard" && (
           <Dashboard stats={pipelineStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); }} />
         )}
 
         {tab === "clients" && !selected && (
-          <ClientList clients={visibleClients} onAdd={addClient} onSelect={setSelectedId} onDelete={deleteClient} settings={settings} />
+          <>
+            <ClientList clients={visibleClients} onAdd={addClient} onSelect={setSelectedId} onDelete={deleteClient} settings={settings} />
+            {visibleClients.length > 0 && (
+              <div className="mt-8 border-t pt-6" style={{ borderColor: BORDER }}>
+                <ClientsTable clients={visibleClients} settings={settings} onUpdate={updateClient} />
+              </div>
+            )}
+          </>
         )}
 
         {tab === "clients" && selected && (
@@ -844,10 +944,6 @@ function AppInner() {
           />
         )}
 
-        {tab === "excelHub" && (
-          <ExcelHub clients={visibleClients} settings={settings} onUpdate={updateClient} />
-        )}
-
         {tab === "settings" && (
           <SettingsPanel
             settings={settings} onSave={saveSettings}
@@ -857,6 +953,7 @@ function AppInner() {
             onAddMember={addTeamMember} onRemoveMember={removeTeamMember}
             cloud={cloud}
             pendingMembers={pendingMembers} onApproveMember={approveMember}
+            license={license}
           />
         )}
       </div>
@@ -2060,6 +2157,9 @@ function CloudAuthGate({ onAuthSuccess }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pendingConfirm, setPendingConfirm] = useState(false);
+  const [joinMode, setJoinMode] = useState("join"); // join = بكود دعوة | create = مكتب جديد
+  const [inviteCode, setInviteCode] = useState("");
+  const [officeName, setOfficeName] = useState("");
 
   const handleSignIn = async () => {
     setError(""); setBusy(true);
@@ -2079,7 +2179,15 @@ function CloudAuthGate({ onAuthSuccess }) {
     try {
       const sb = getSupabase();
       const { data, error: err } = await withTimeout(
-        sb.auth.signUp({ email: email.trim(), password, options: { data: { name: name.trim() } } }),
+        sb.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: {
+            name: name.trim(),
+            invite_code: joinMode === "join" ? inviteCode.trim().toUpperCase() : "",
+            office_name: joinMode === "create" ? officeName.trim() : "",
+          } },
+        }),
         10000
       );
       if (err) { setError(`تعذر إنشاء الحساب — رسالة الخادم: ${err.message}`); setBusy(false); return; }
@@ -2121,11 +2229,37 @@ function CloudAuthGate({ onAuthSuccess }) {
             {mode === "signup" && (
               <>
                 <input className="inp" placeholder="اسمك الكامل" value={name} onChange={e => setName(e.target.value)} />
-                <div className="mb-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
-                  <ShieldCheck size={13} className="mt-0.5 shrink-0" />
-                  أول شخص يسجّل في المشروع يبقى مالك المكتب تلقائيًا. أي حد بعده هيفضل "بانتظار الموافقة"
-                  لحد ما مالك فعلي يوافق عليه من تبويب الإعدادات.
+
+                <div className="mb-3 flex gap-1 rounded-lg p-1" style={{ backgroundColor: "#F1F5F9" }}>
+                  <button onClick={() => setJoinMode("join")} className="flex-1 rounded-md py-1.5 text-xs font-bold"
+                    style={{ backgroundColor: joinMode === "join" ? "#FFFFFF" : "transparent", color: TEXT }}>
+                    انضمام لمكتب
+                  </button>
+                  <button onClick={() => setJoinMode("create")} className="flex-1 rounded-md py-1.5 text-xs font-bold"
+                    style={{ backgroundColor: joinMode === "create" ? "#FFFFFF" : "transparent", color: TEXT }}>
+                    مكتب جديد
+                  </button>
                 </div>
+
+                {joinMode === "join" ? (
+                  <>
+                    <input className="inp tracking-widest" placeholder="كود الدعوة" value={inviteCode}
+                      onChange={e => setInviteCode(e.target.value.toUpperCase())} />
+                    <div className="mb-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
+                      <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+                      اطلب الكود من مالك مكتبك. بعد التسجيل يظل حسابك بانتظار موافقته.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input className="inp" placeholder="اسم المكتب" value={officeName}
+                      onChange={e => setOfficeName(e.target.value)} />
+                    <div className="mb-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
+                      <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+                      ستكون مالك هذا المكتب، وتبدأ بتجربة مجانية ١٤ يومًا. بياناتك معزولة تمامًا عن أي مكتب آخر.
+                    </div>
+                  </>
+                )}
               </>
             )}
             <input className="inp" type="email" placeholder="البريد الإلكتروني" value={email} onChange={e => setEmail(e.target.value)} />
@@ -2192,7 +2326,7 @@ function PendingApprovalScreen({ onSignOut, onRefresh }) {
 }
 
 /* ============================= Settings ============================= */
-function SettingsPanel({ settings, onSave, onExportBackup, onImportBackup, clientCount, team, currentMember, onAddMember, onRemoveMember, cloud, pendingMembers, onApproveMember }) {
+function SettingsPanel({ settings, onSave, onExportBackup, onImportBackup, clientCount, team, currentMember, onAddMember, onRemoveMember, cloud, pendingMembers, onApproveMember, license }) {
   const [local, setLocal] = useState(settings);
   const fileInputRef = React.useRef(null);
   const [newName, setNewName] = useState("");
@@ -2510,6 +2644,8 @@ alter publication supabase_realtime add table profiles;`;
         </>
         )}
       </div>
+
+      <TeamInvite license={license} />
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-3 h-section">هوية المكتب</div>
