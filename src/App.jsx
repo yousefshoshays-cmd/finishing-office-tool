@@ -14,6 +14,7 @@ import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profile
 import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
 import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin, marginHealth, newCustomItem } from "./domain/pricebook.js";
 import {
+  PAYMENT_STAGES,
   VARIATION_STATUS, newVariation, variationTotal, contractValue,
   newReceipt, paymentPlan, newExpense, budgetVariance, projectCashPosition,
 } from "./domain/finance.js";
@@ -21,7 +22,7 @@ import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, 
 import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
 import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET } from "./data/photos.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
-import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "./domain/catalogue.js";
+import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS, officeLine } from "./domain/catalogue.js";
 import {
   newClient, resolveItem, calcClient, migrateClient, progressFromVisits,
   ownsClient, linkEngineer, buildContractSnapshot, amendContract, effectiveTotals,
@@ -30,11 +31,74 @@ import {
   NAVY, NAVY_DARK, GOLD, LIGHT, BORDER, TEXT, MUTED,
   LEVELS, LEVEL_COLORS, SCOPES, STAGES, STAGE_COLORS,
 } from "./ui/tokens.js";
-import { PAYMENT_STAGES, generateContractDocx, downloadDocx } from "./export/docx.js";
-import { buildAndDownloadClientPptx } from "./export/pptx.js";
-import { exportFullBOQ, exportPipelineSummary } from "./export/excel.js";
+/* مكتبات التصدير (exceljs / docx / pptxgenjs) تزن أكثر من 1.3 ميجابايت مجتمعة.
+   تُحمَّل الآن عند أول ضغطة على زر تصدير فقط، لا عند فتح التطبيق. */
+const loadDocx  = () => import("./export/docx.js");
+const loadPptx  = () => import("./export/pptx.js");
+const loadExcel = () => import("./export/excel.js");
+
+const generateContractDocx = async (...a) => (await loadDocx()).generateContractDocx(...a);
+const downloadDocx = async (...a) => (await loadDocx()).downloadDocx(...a);
+const buildAndDownloadClientPptx = async (...a) => (await loadPptx()).buildAndDownloadClientPptx(...a);
+const exportFullBOQ = async (...a) => (await loadExcel()).exportFullBOQ(...a);
+const exportPipelineSummary = async (...a) => (await loadExcel()).exportPipelineSummary(...a);
 
 /* ============================= Excel control hub ============================= */
+
+/* ── حوار تأكيد للعمليات المدمّرة ─────────────────────────────────────────
+   الحذف بضغطة واحدة كان أخطر عيب في الأداة: لا سؤال، لا تراجع، لا نسخة.
+   هنا نطلب تأكيدًا صريحًا، ونجبر المستخدم على كتابة اسم العميل قبل الحذف. */
+function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger, requireText, onConfirm, onCancel }) {
+  const [typed, setTyped] = useState("");
+  useEffect(() => { if (open) setTyped(""); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") onCancel?.(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
+  if (!open) return null;
+  const ok = !requireText || typed.trim() === String(requireText).trim();
+  return (
+    <div dir="rtl" className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(15,23,42,0.55)" }} onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl p-6 shadow-xl" style={{ backgroundColor: "#FFFFFF", fontFamily: "'Cairo', Arial, sans-serif" }} onClick={e => e.stopPropagation()}>
+        <div className="mb-2 flex items-center gap-2 text-base font-bold" style={{ color: danger ? "#B42318" : NAVY }}>
+          <AlertCircle size={18} /> {title}
+        </div>
+        <div className="mb-4 text-sm leading-relaxed" style={{ color: MUTED }}>{body}</div>
+        {requireText && (
+          <div className="mb-4">
+            <div className="mb-1.5 text-xs font-semibold" style={{ color: TEXT }}>
+              للتأكيد، اكتب: <span className="font-bold" style={{ color: "#B42318" }}>{requireText}</span>
+            </div>
+            <input
+              autoFocus
+              className="w-full rounded-lg px-3 py-2 text-sm"
+              style={{ border: `1px solid ${BORDER}` }}
+              value={typed}
+              onChange={e => setTyped(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && ok) onConfirm?.(); }}
+            />
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            disabled={!ok}
+            onClick={onConfirm}
+            className="flex-1 rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40"
+            style={{ backgroundColor: danger ? "#B42318" : NAVY }}
+          >
+            {confirmLabel}
+          </button>
+          <button onClick={onCancel} className="flex-1 rounded-lg py-2.5 text-sm font-bold" style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExcelHub({ clients, settings, onUpdate }) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
@@ -98,8 +162,8 @@ function ExcelHub({ clients, settings, onUpdate }) {
           لا يوجد عملاء بعد.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr style={{ backgroundColor: NAVY, color: "#FFFFFF" }}>
                 <SortHeader label="العميل" sortKey="name_asc" />
@@ -142,7 +206,7 @@ function ExcelHub({ clients, settings, onUpdate }) {
                     </td>
                     <td className="p-3 text-center">
                       {contractReady ? (
-                        <button onClick={() => downloadDocx(`عقد_${c.name || "عميل"}.docx`, generateContractDocx(c, calc))} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#FCE9B5", color: "#8A6D00" }}>
+                        <button onClick={() => generateContractDocx(c, calc, settings).then(d => downloadDocx(`عقد_${c.name || "عميل"}.docx`, d))} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#FCE9B5", color: "#8A6D00" }}>
                           <FileText size={13} /> تحميل العقد
                         </button>
                       ) : (
@@ -290,6 +354,8 @@ function AppInner() {
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  const [errorToast, setErrorToast] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
   const [team, setTeam] = useState([]);
   const [pendingMembers, setPendingMembers] = useState([]);
   const [currentMember, setCurrentMember] = useState(null);
@@ -463,11 +529,36 @@ function AppInner() {
   };
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+  const showError = (msg) => { setErrorToast(msg); setTimeout(() => setErrorToast(null), 5000); };
+
+  /* أي عملية تلمس الشبكة أو التخزين تمر من هنا. قبل ذلك كان الفشل صامتًا:
+     ينقطع الإنترنت في الموقع، فيظن المستخدم أن بياناته حُفظت وهي لم تُحفظ. */
+  const guard = useCallback(async (fn, failMsg = "تعذّر إتمام العملية — تحقّق من الاتصال وأعد المحاولة") => {
+    try {
+      return await fn();
+    } catch (err) {
+      console.error("[operation failed]", err);
+      const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+      setErrorToast(offline ? "لا يوجد اتصال بالإنترنت — لم يتم الحفظ" : failMsg);
+      setTimeout(() => setErrorToast(null), 5000);
+      return undefined;
+    }
+  }, []);
 
   const saveClient = useCallback(async (client) => {
     setSaving(true);
-    await storageSet("client:" + client.id, client);
-    setSaving(false);
+    try {
+      await storageSet("client:" + client.id, client);
+    } catch (err) {
+      console.error("[saveClient failed]", err);
+      const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+      setErrorToast(offline
+        ? "⚠️ لا يوجد اتصال — التعديل الأخير لم يُحفظ. لا تغلق الصفحة."
+        : "⚠️ تعذّر حفظ التعديل الأخير. لا تغلق الصفحة وأعد المحاولة.");
+      setTimeout(() => setErrorToast(null), 6000);
+    } finally {
+      setSaving(false);
+    }
   }, []);
 
   const updateClient = (id, patch) => {
@@ -497,20 +588,38 @@ function AppInner() {
     showToast(template ? `عميل جديد من قالب "${template.name}"` : "تمت إضافة عميل جديد");
   };
 
-  const deleteClient = async (id) => {
-    await storageDelete("client:" + id);
-    setClients(prev => prev.filter(c => c.id !== id));
-    if (selectedId === id) setSelectedId(null);
-    showToast("تم حذف العميل");
+  const performDeleteClient = async (id) => {
+    await guard(async () => {
+      await storageDelete("client:" + id);
+      setClients(prev => prev.filter(c => c.id !== id));
+      if (selectedId === id) setSelectedId(null);
+      showToast("تم حذف العميل");
+    }, "تعذّر حذف العميل — لم يُحذف شيء. تحقّق من الاتصال.");
+  };
+
+  /* الحذف لا يحدث مباشرة أبدًا: يفتح حوار تأكيد يطلب كتابة اسم العميل. */
+  const deleteClient = (id) => {
+    const c = clients.find(x => x.id === id);
+    if (!c) return;
+    setConfirmState({
+      title: "حذف العميل نهائيًا",
+      body: `سيُحذف العميل "${c.name || "بدون اسم"}" وكل ما يخصّه: المقايسة، أوامر التغيير، الدفعات، الزيارات والصور. لا يمكن التراجع عن هذا الإجراء.`,
+      confirmLabel: "حذف نهائي",
+      danger: true,
+      requireText: c.name || "حذف",
+      onConfirm: async () => { setConfirmState(null); await performDeleteClient(id); },
+    });
   };
 
   const saveSettings = async (next) => {
     setSettings(next);
-    await storageSet("settings:global", next);
-    showToast("تم حفظ الإعدادات");
+    const ok = await guard(async () => { await storageSet("settings:global", next); return true; },
+      "تعذّر حفظ الإعدادات — تحقّق من الاتصال");
+    if (ok) showToast("تم حفظ الإعدادات");
   };
 
   const exportBackup = async () => {
+    await guard(async () => {
     const entries = await storageGetAllEntries();
     const payload = { app: "boq_office_db", version: 1, exportedAt: new Date().toISOString(), entries };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -521,6 +630,7 @@ function AppInner() {
     a.click();
     URL.revokeObjectURL(url);
     showToast("تم تصدير النسخة الاحتياطية");
+    }, "تعذّر تصدير النسخة الاحتياطية");
   };
 
   const importBackup = async (file) => {
@@ -624,12 +734,12 @@ function AppInner() {
   return (
     <div dir="rtl" className="min-h-[700px] w-full" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT, color: TEXT }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-navy">
-        <div>
-          <div className="text-lg font-bold text-white">نظام متابعة العملاء والتسعير</div>
-          <div className="text-xs" style={{ color: "#AEB9C6" }}>مكتب __________ للاستشارات المعمارية</div>
+      <div className="flex flex-col gap-3 px-4 py-3 bg-navy sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="truncate text-base font-bold text-white sm:text-lg">نظام متابعة العملاء والتسعير</div>
+          <div className="truncate text-xs" style={{ color: "#AEB9C6" }}>{officeLine(settings)}</div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: simpleMode ? "#B45309" : cloud ? "#1E7B45" : "#4B5563", color: "#FFFFFF" }}>
             <Wifi size={12} /> {simpleMode ? "وضع تجريبي مبسط (بدون صلاحيات)" : cloud ? "مزامنة سحابية مفعّلة" : "محلي (بدون مزامنة)"}
           </span>
@@ -646,7 +756,7 @@ function AppInner() {
             </button>
           )}
         </div>
-        <nav className="flex gap-1 rounded-lg p-1" style={{ backgroundColor: NAVY_DARK }}>
+        <nav className="-mx-1 flex gap-1 overflow-x-auto rounded-lg p-1 lg:mx-0 lg:overflow-visible" style={{ backgroundColor: NAVY_DARK, scrollbarWidth: "none" }}>
           {[
             ["dashboard", "لوحة المتابعة", LayoutDashboard],
             ["clients", "العملاء", Users],
@@ -657,7 +767,7 @@ function AppInner() {
             <button
               key={key}
               onClick={() => setTab(key)}
-              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors"
+              className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-semibold transition-colors sm:px-3 sm:py-1.5 sm:text-sm"
               style={{
                 backgroundColor: tab === key ? GOLD : "transparent",
                 color: tab === key ? "#1F1F1F" : "#D9E1F2",
@@ -671,12 +781,37 @@ function AppInner() {
       </div>
 
       {toast && (
-        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-lg" style={{ backgroundColor: "#1E7B45" }}>
+        <div className="fixed left-1/2 top-4 z-50 max-w-[92vw] -translate-x-1/2 rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-lg" style={{ backgroundColor: "#1E7B45" }}>
           {toast}
         </div>
       )}
 
-      <div className="p-6">
+      {errorToast && (
+        <div
+          role="alert"
+          className="fixed left-1/2 top-4 z-[60] flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg"
+          style={{ backgroundColor: "#B42318" }}
+        >
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{errorToast}</span>
+          <button onClick={() => setErrorToast(null)} className="shrink-0 opacity-80" aria-label="إغلاق التنبيه">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title}
+        body={confirmState?.body}
+        confirmLabel={confirmState?.confirmLabel}
+        danger={confirmState?.danger}
+        requireText={confirmState?.requireText}
+        onConfirm={confirmState?.onConfirm}
+        onCancel={() => setConfirmState(null)}
+      />
+
+      <div className="p-3 sm:p-6">
         {tab === "dashboard" && (
           <Dashboard stats={pipelineStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); }} />
         )}
@@ -1258,7 +1393,7 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
             </div>
           </div>
           <button
-            onClick={() => downloadDocx(`عقد_${client.name || "عميل"}.docx`, generateContractDocx(client, calc))}
+            onClick={() => generateContractDocx(client, calc, settings).then(d => downloadDocx(`عقد_${client.name || "عميل"}.docx`, d))}
             className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold shadow-sm"
             style={{ backgroundColor: "#1F1F1F", color: "#FFFFFF" }}
           >
@@ -1881,7 +2016,7 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
     <div dir="rtl" className="flex min-h-[700px] w-full items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
-        <div className="mb-6 text-center text-xs text-muted">مكتب __________ للاستشارات المعمارية</div>
+        <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
 
         {team.length === 0 ? (
           <>
@@ -1967,7 +2102,7 @@ function CloudAuthGate({ onAuthSuccess }) {
         <div className="mb-1 flex items-center justify-center gap-1.5 text-xs" style={{ color: "#1E7B45" }}>
           <Wifi size={13} /> وضع المزامنة السحابية مفعّل
         </div>
-        <div className="mb-6 text-center text-xs text-muted">مكتب __________ للاستشارات المعمارية</div>
+        <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
 
         {pendingConfirm ? (
           <div className="rounded-lg p-4 text-center text-sm" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
@@ -2377,6 +2512,42 @@ alter publication supabase_realtime add table profiles;`;
       </div>
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+        <div className="mb-3 h-section">هوية المكتب</div>
+        {!(local.officeName || "").trim() && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-5" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <span>أدخل اسم مكتبك قبل تصدير أي عقد أو عرض للعميل — بدونه سيظهر اسم عام في المستندات.</span>
+          </div>
+        )}
+        <Field label="اسم المكتب">
+          <input
+            className="inp"
+            placeholder="مثال: النخبة"
+            value={local.officeName || ""}
+            onChange={e => setLocal({ ...local, officeName: e.target.value })}
+            onKeyDown={e => { if (e.key === "Enter") onSave(local); }}
+          />
+        </Field>
+        <Field label="هاتف المكتب">
+          <input
+            className="inp"
+            placeholder="01xxxxxxxxx"
+            inputMode="tel"
+            value={local.officePhone || ""}
+            onChange={e => setLocal({ ...local, officePhone: e.target.value })}
+            onKeyDown={e => { if (e.key === "Enter") onSave(local); }}
+          />
+        </Field>
+        <Field label="عنوان المكتب">
+          <input
+            className="inp"
+            value={local.officeAddress || ""}
+            onChange={e => setLocal({ ...local, officeAddress: e.target.value })}
+            onKeyDown={e => { if (e.key === "Enter") onSave(local); }}
+          />
+        </Field>
+
+        <div className="mb-3 mt-5 h-section">النسب المالية</div>
         <Field label="نسبة أتعاب الإشراف الهندسي %">
           <input type="number" step="0.1" className="inp" value={(local.supervisionPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, supervisionPct: Number(e.target.value) / 100 })} />
@@ -2387,7 +2558,8 @@ alter publication supabase_realtime add table profiles;`;
         </Field>
         <Field label="نسبة ضريبة القيمة المضافة %">
           <input type="number" step="0.1" className="inp" value={(local.vatPct * 100).toFixed(1)}
-            onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })} />
+            onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })}
+            onKeyDown={e => { if (e.key === "Enter") onSave(local); }} />
         </Field>
         <button onClick={() => onSave(local)} className="mt-2 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-navy">
           <Save size={15} /> حفظ الإعدادات
@@ -2527,7 +2699,8 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
         </div>
       )}
 
-        <table className="w-full text-xs">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-xs">
           <thead>
             <tr className="border-b" style={{ borderColor: "var(--color-line)" }}>
               <th className="p-2 text-right lbl">البند</th>
@@ -2578,6 +2751,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
       {visible.length > 60 && (
         <div className="mt-2 text-center text-xs text-muted">يُعرض 60 من {visible.length} — استخدم البحث</div>

@@ -2,15 +2,9 @@ import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Width
 import { saveAs } from "file-saver";
 import { fmt, SPECS } from "../domain/catalogue.js";
 import { LEVELS, SCOPES } from "../ui/tokens.js";
+import { PAYMENT_STAGES } from "../domain/finance.js";
+export { PAYMENT_STAGES };
 
-
-export const PAYMENT_STAGES = [
-  { pct: 0.20, label: "دفعة مقدمة عند توقيع العقد" },
-  { pct: 0.20, label: "بعد استلام الخامات وبدء أعمال الهدم والبناء" },
-  { pct: 0.30, label: "بعد الانتهاء من التشطيبات الأساسية (أرضيات، حوائط، أسقف)" },
-  { pct: 0.20, label: "بعد الانتهاء من التركيبات النهائية (أبواب، كهرباء، سباكة، مطبخ وحمامات)" },
-  { pct: 0.10, label: "عند التسليم النهائي والمعاينة المشتركة" },
-];
 
 export function rtlP(opts) { return new Paragraph({ bidirectional: true, alignment: AlignmentType.RIGHT, ...opts }); }
 export function rtlR(text, opts = {}) { return new TextRun({ text, rightToLeft: true, font: "Arial", ...opts }); }
@@ -44,7 +38,9 @@ export const DOC_BORDERS = {
 export const PAGE_W = 11906, PAGE_H = 16838, MARGIN = 850;
 export const CONTENT_W = PAGE_W - 2 * MARGIN;
 
-export function generateContractDocx(client, calc) {
+export function generateContractDocx(client, calc, settings = {}) {
+  const OFFICE = (settings.officeName || "").trim();
+  const OFFICE_PARTY = OFFICE ? `مكتب ${OFFICE} للاستشارات المعمارية` : "مكتب الاستشارات المعمارية";
   const today = new Date().toLocaleDateString("ar-EG");
   const children = [];
 
@@ -57,8 +53,8 @@ export function generateContractDocx(client, calc) {
 
   children.push(docH1("أطراف التعاقد"));
   children.push(docBody(`إنه في يوم ${today}، تم الاتفاق بين كل من:`));
-  children.push(docBody('الطرف الأول: مكتب __________ للاستشارات المعمارية (ويشار إليه بـ "المكتب").', { bold: true }));
-  children.push(docBody(`الطرف الثاني: ${client.name || "__________"}، مقيم بـ ${client.address || "__________"} (ويشار إليه بـ "العميل").`, { bold: true }));
+  children.push(docBody(`الطرف الأول: ${OFFICE_PARTY} (ويشار إليه بـ "المكتب").`, { bold: true }));
+  children.push(docBody(`الطرف الثاني: ${client.name || "................................"}، مقيم بـ ${client.address || "................................"} (ويشار إليه بـ "العميل").`, { bold: true }));
 
   children.push(docH1("أولاً: نطاق العمل"));
   children.push(docBody(`يلتزم المكتب بتنفيذ أعمال التصميم والتشطيب لشقة العميل بمساحة تقريبية ${client.area} م²، وفقاً للمقايسة التفصيلية المعتمدة والموقعة من الطرفين والمرفقة بهذا العقد.`));
@@ -93,7 +89,7 @@ export function generateContractDocx(client, calc) {
   children.push(docBody("تُسدد كل دفعة خلال مدة أقصاها 3 أيام عمل من تاريخ إخطار العميل باكتمال المرحلة المرتبطة بها.", { italics: true, color: "6B7280" }));
 
   children.push(docH1("رابعاً: مدة التنفيذ"));
-  children.push(docBody("مدة التنفيذ الإجمالية __________ يوم عمل من تاريخ استلام الموقع وتحصيل الدفعة المقدمة."));
+  children.push(docBody(`مدة التنفيذ الإجمالية ${client.durationDays || "......"} يوم عمل من تاريخ استلام الموقع وتحصيل الدفعة المقدمة.`));
 
   children.push(docH1("خامساً: الضمانات وفسخ العقد"));
   children.push(docBody("يلتزم المكتب بضمان أعمال التنفيذ وفقاً للمدد الموضحة في نموذج الاستلام والتسليم النهائي المرفق. يحق لأي من الطرفين فسخ هذا العقد في حال إخلال الطرف الآخر بأي من بنوده الجوهرية بعد إنذار كتابي ومهلة 15 يوماً لتصحيح الوضع."));
@@ -107,13 +103,13 @@ export function generateContractDocx(client, calc) {
     rows: [new TableRow({ children: [
       new TableCell({ width: { size: half, type: WidthType.DXA }, children: [
         rtlP({ children: [rtlR("الطرف الأول (المكتب)", { bold: true, size: 21 })] }),
-        rtlP({ spacing: { before: 400 }, children: [rtlR("الاسم: __________", { size: 21 })] }),
-        rtlP({ spacing: { before: 200 }, children: [rtlR("التوقيع: __________", { size: 21 })] }),
+        rtlP({ spacing: { before: 400 }, children: [rtlR(`الاسم: ${OFFICE || "................................"}`, { size: 21 })] }),
+        rtlP({ spacing: { before: 200 }, children: [rtlR("التوقيع: ................................", { size: 21 })] }),
       ]}),
       new TableCell({ width: { size: CONTENT_W - half, type: WidthType.DXA }, children: [
         rtlP({ children: [rtlR("الطرف الثاني (العميل)", { bold: true, size: 21 })] }),
-        rtlP({ spacing: { before: 400 }, children: [rtlR(`الاسم: ${client.name || "__________"}`, { size: 21 })] }),
-        rtlP({ spacing: { before: 200 }, children: [rtlR("التوقيع: __________", { size: 21 })] }),
+        rtlP({ spacing: { before: 400 }, children: [rtlR(`الاسم: ${client.name || "................................"}`, { size: 21 })] }),
+        rtlP({ spacing: { before: 200 }, children: [rtlR("التوقيع: ................................", { size: 21 })] }),
       ]}),
     ]})],
   }));

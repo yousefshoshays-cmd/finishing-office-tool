@@ -66,4 +66,20 @@ export const SPECS = {
 
 export const fmt = (n) => Math.round(n).toLocaleString("en-US");
 
-export const DEFAULT_SETTINGS = { supervisionPct: 0.08, contingencyPct: 0.05, vatPct: 0.14 };
+export const DEFAULT_SETTINGS = {
+  supervisionPct: 0.08,
+  contingencyPct: 0.05,
+  vatPct: 0.14,
+  officeName: "",
+  officePhone: "",
+  officeAddress: "",
+};
+
+/** سطر هوية المكتب. لا يُظهر فراغات أبدًا — لو الاسم غير مضبوط يرجع نصًا محايدًا. */
+export const officeLine = (settings) => {
+  const n = (settings?.officeName || "").trim();
+  return n ? `مكتب ${n} للاستشارات المعمارية` : "مكتب الاستشارات المعمارية";
+};
+
+/** اسم المكتب وحده — للعقود والمستندات الرسمية. */
+export const officeName = (settings) => (settings?.officeName || "").trim() || "المكتب";

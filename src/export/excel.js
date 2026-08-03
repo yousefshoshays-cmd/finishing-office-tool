@@ -1,4 +1,5 @@
-import * as ExcelJS from "exceljs";
+let _ExcelJS = null;
+const ExcelJSLib = async () => (_ExcelJS ||= await import("exceljs"));
 import { saveAs } from "file-saver";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "../domain/catalogue.js";
 import { resolveItem, calcClient } from "../domain/pricing.js";
@@ -35,7 +36,7 @@ export async function saveWorkbook(wb, filename) {
 
 export async function exportFullBOQ(client, settings) {
   const calc = calcClient(client, settings);
-  const wb = new ExcelJS.Workbook();
+  const wb = new (await ExcelJSLib()).Workbook();
   const ws = wb.addWorksheet("المقايسة التفصيلية", { views: [{ rightToLeft: true }] });
   ws.columns = [
     { width: 4 }, { width: 40 }, { width: 9 }, { width: 9 },
@@ -178,7 +179,7 @@ export async function exportFullBOQ(client, settings) {
 }
 
 export async function exportPipelineSummary(clients, settings) {
-  const wb = new ExcelJS.Workbook();
+  const wb = new (await ExcelJSLib()).Workbook();
   const ws = wb.addWorksheet("ملخص كل العملاء", { views: [{ rightToLeft: true }] });
   ws.columns = [
     { width: 22 }, { width: 15 }, { width: 28 }, { width: 10 },

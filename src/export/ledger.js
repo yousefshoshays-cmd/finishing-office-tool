@@ -1,4 +1,5 @@
-import * as ExcelJS from "exceljs";
+let _ExcelJS = null;
+const ExcelJSLib = async () => (_ExcelJS ||= await import("exceljs"));
 import { saveAs } from "file-saver";
 import { contractValue, paymentPlan, variationTotal } from "../domain/finance.js";
 import { fmt } from "../domain/catalogue.js";
@@ -76,7 +77,7 @@ export function ledgerSummary(clients) {
 }
 
 export async function exportLedger(clients, filename = "دفتر_الحركة.xlsx") {
-  const wb = new ExcelJS.Workbook();
+  const wb = new (await ExcelJSLib()).Workbook();
   wb.creator = "نظام متابعة العملاء والتسعير";
 
   /* ورقة ١: كشف الحركة */

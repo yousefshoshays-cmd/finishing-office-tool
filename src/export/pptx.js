@@ -1,4 +1,5 @@
-import pptxgen from "pptxgenjs";
+let _pptx = null;
+const pptxLib = async () => (_pptx ||= (await import("pptxgenjs")).default);
 import { fmt, SPECS } from "../domain/catalogue.js";
 import { LEVELS, SCOPES, LEVEL_COLORS } from "../ui/tokens.js";
 
@@ -42,7 +43,7 @@ export function pptxMoodPanel(s, x, y, w, h, levelKey, accentColor) {
 }
 
 export async function buildAndDownloadClientPptx(client, calc, settings) {
-  const p = new pptxgen();
+  const p = new (await pptxLib())();
   p.layout = "LAYOUT_WIDE";
   p.rtlMode = true;
   const NAVY_ = "1F4E78", NAVY_DARK_ = "132E45", GOLD_ = "BF9000", LIGHT_ = "F5F7FA", MUTED_ = "6B7280";
@@ -56,7 +57,7 @@ export async function buildAndDownloadClientPptx(client, calc, settings) {
     s.addText(`عرض تشطيب مخصص`, { x: 1, y: 2.5, w: 11.33, h: 1, fontFace: "Arial", fontSize: 34, bold: true, color: "FFFFFF", align: "center", rtlMode: true });
     s.addText(client.name || "عميل", { x: 1, y: 3.4, w: 11.33, h: 0.7, fontFace: "Arial", fontSize: 22, color: GOLD_, align: "center", rtlMode: true });
     s.addText(`${client.address || ""}   |   ${client.area} م²   |   ${new Date().toLocaleDateString("ar-EG")}`, { x: 1, y: 4.2, w: 11.33, h: 0.5, fontFace: "Arial", fontSize: 13, italic: true, color: "D9E1F2", align: "center", rtlMode: true });
-    s.addText("مكتب __________ للاستشارات المعمارية", { x: 1, y: 6.6, w: 11.33, h: 0.4, fontFace: "Arial", fontSize: 11, color: "AEB9C6", align: "center", rtlMode: true });
+    s.addText(((settings?.officeName || "").trim() ? `مكتب ${settings.officeName.trim()} للاستشارات المعمارية` : "مكتب الاستشارات المعمارية"), { x: 1, y: 6.6, w: 11.33, h: 0.4, fontFace: "Arial", fontSize: 11, color: "AEB9C6", align: "center", rtlMode: true });
   }
 
   // Slide 2 — Chosen level per scope

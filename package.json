@@ -4,8 +4,8 @@
   "private": true,
   "description": "نظام متابعة العملاء والتسعير — مكتب تشطيبات معماري",
   "scripts": {
-    "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./public/styles.css --minify",
-    "build:js": "esbuild src/main.jsx --bundle --minify --loader:.jsx=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outfile=public/bundle.js",
+    "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./styles.css --minify",
+    "build:js": "esbuild src/main.jsx --bundle --minify --splitting --format=esm --loader:.jsx=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outdir=assets --entry-names=main",
     "build": "npm run build:css && npm run build:js",
     "test": "esbuild test/smoke.mjs --bundle --platform=node --outfile=/tmp/_s.cjs --format=cjs && node /tmp/_s.cjs"
   },
