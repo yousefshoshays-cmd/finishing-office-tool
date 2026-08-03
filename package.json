@@ -7,7 +7,10 @@
     "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./styles.css --minify",
     "build:js": "esbuild src/main.jsx --bundle --minify --splitting --format=esm --loader:.jsx=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outdir=assets --entry-names=main",
     "build": "npm run build:css && npm run build:js",
-    "test": "esbuild test/smoke.mjs --bundle --platform=node --outfile=/tmp/_s.cjs --format=cjs && node /tmp/_s.cjs"
+    "test": "esbuild test/smoke.mjs --bundle --platform=node --outfile=/tmp/_s.cjs --format=cjs && node /tmp/_s.cjs",
+    "test:roles": "esbuild test/roles.mjs --bundle --platform=node --outfile=/tmp/_r.cjs --format=cjs && node /tmp/_r.cjs",
+    "test:ui": "esbuild test/render.mjs --bundle --platform=node --loader:.mjs=jsx --outfile=/tmp/_u.cjs --format=cjs && node /tmp/_u.cjs",
+    "test:all": "npm run test && npm run test:roles && npm run test:ui"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

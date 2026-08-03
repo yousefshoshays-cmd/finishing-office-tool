@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback , useRef} from "react"
 import {
   Users, LayoutDashboard, Settings, Plus, Trash2, Download,
   Phone, MapPin, Ruler, ChevronLeft, Save, X, AlertCircle, Loader2,
-  FileSpreadsheet, ExternalLink, FileText, PartyPopper, UploadCloud, ShieldCheck, Wifi, ChevronDown,
-} from "lucide-react";
+  FileSpreadsheet, ExternalLink, FileText, PartyPopper, UploadCloud, ShieldCheck, Wifi, ChevronDown, CreditCard, Mail } from "lucide-react";
 
 import {
   getCloudConfig, setCloudConfig, isCloudMode, isSimpleMode, getSupabase, withTimeout,
@@ -18,6 +17,7 @@ import { catalogueDriftReport, priceOutliers } from "./domain/suggest.js";
 import { fetchLicense, licenseNotice, LICENSE_UNKNOWN } from "./data/license.js";
 /* لوحة الإدارة تُحمَّل عند الطلب: مدير واحد فقط يحتاجها، فلا داعي لتحميلها للجميع. */
 const AdminPanel = React.lazy(() => import("./ui/AdminPanel.jsx"));
+const BillingPanel = React.lazy(() => import("./ui/BillingPanel.jsx"));
 import { amIPlatformAdmin } from "./data/admin.js";
 import { parseSchedule, parseCSV } from "./domain/importSchedule.js";
 import {
@@ -56,6 +56,34 @@ const exportPipelineSummary = async (...a) => (await loadExcel()).exportPipeline
 /* ── حوار تأكيد للعمليات المدمّرة ─────────────────────────────────────────
    الحذف بضغطة واحدة كان أخطر عيب في الأداة: لا سؤال، لا تراجع، لا نسخة.
    هنا نطلب تأكيدًا صريحًا، ونجبر المستخدم على كتابة اسم العميل قبل الحذف. */
+
+/* استخراج رسالة مفهومة من خطأ Supabase.
+   أخطاء GoTrue أحيانًا تصل بجسم فارغ ({}) فتضيع المعلومة تمامًا،
+   لذا نجمع كل الحقول المتاحة ونترجم الشائع منها للعربية. */
+function authErrorText(err) {
+  if (!err) return "خطأ غير معروف";
+  const raw = [err.message, err.error_description, err.error, err.msg, err.hint, err.details]
+    .filter(v => typeof v === "string" && v.trim() && v.trim() !== "{}")
+    .join(" · ");
+  const code = err.status || err.code;
+
+  const map = [
+    [/already registered|already exists/i, "هذا البريد مسجّل بالفعل. جرّب تسجيل الدخول أو استخدم بريدًا آخر."],
+    [/Database error saving new user/i, "فشل إنشاء الحساب في قاعدة البيانات. غالبًا لم تُشغَّل سكربتات الترحيل، أو كود الدعوة غير صحيح."],
+    [/كود الدعوة/,                        "كود الدعوة غير صحيح. تأكّد منه مع مالك المكتب."],
+    [/Password should be at least/i,      "كلمة المرور قصيرة — استخدم ٦ أحرف على الأقل."],
+    [/Unable to validate email|invalid format/i, "صيغة البريد الإلكتروني غير صحيحة."],
+    [/rate limit|too many/i,              "محاولات كثيرة خلال وقت قصير. انتظر دقائق ثم أعد المحاولة."],
+    [/signup.*disabled/i,                 "التسجيل معطّل في إعدادات Supabase."],
+    [/email.*not.*confirm/i,              "لم يُؤكَّد البريد بعد. افتح رابط التأكيد في بريدك."],
+  ];
+  for (const [re, msg] of map) if (re.test(raw)) return msg;
+
+  if (raw) return raw;
+  if (code) return `الخادم أعاد الرمز ${code} بلا تفاصيل. راجع Supabase → Logs → Auth للسبب الدقيق.`;
+  return "الخادم لم يرسل تفاصيل. راجع Supabase → Logs → Auth للسبب الدقيق.";
+}
+
 function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger, requireText, onConfirm, onCancel }) {
   const [typed, setTyped] = useState("");
   useEffect(() => { if (open) setTyped(""); }, [open]);
@@ -68,8 +96,8 @@ function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger,
   if (!open) return null;
   const ok = !requireText || typed.trim() === String(requireText).trim();
   return (
-    <div dir="rtl" className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(15,23,42,0.55)" }} onClick={onCancel}>
-      <div className="w-full max-w-md rounded-2xl p-6 shadow-xl" style={{ backgroundColor: "#FFFFFF", fontFamily: "'Cairo', Arial, sans-serif" }} onClick={e => e.stopPropagation()}>
+    <div dir="rtl" className="fixed inset-0 z-[100] flex items-end justify-center p-3 sm:items-center sm:p-4" style={{ backgroundColor: "rgba(15,23,42,0.55)" }} onClick={onCancel}>
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl p-5 shadow-xl sm:p-6" style={{ backgroundColor: "#FFFFFF", fontFamily: "'Cairo', Arial, sans-serif" }} onClick={e => e.stopPropagation()}>
         <div className="mb-2 flex items-center gap-2 text-base font-bold" style={{ color: danger ? "#B42318" : NAVY }}>
           <AlertCircle size={18} /> {title}
         </div>
@@ -111,7 +139,7 @@ function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger,
 /* ── شريط حالة الترخيص ─────────────────────────────────────────────────────
    يظهر أعلى التطبيق. رسالته تتدرّج: معلومة → تحذير → إنذار.
    لا يمنع الاستخدام بنفسه؛ المنع في قاعدة البيانات. */
-function LicenseBanner({ license }) {
+function LicenseBanner({ license, onUpgrade }) {
   const notice = licenseNotice(license);
   if (!notice) return null;
   const tones = {
@@ -125,12 +153,12 @@ function LicenseBanner({ license }) {
          style={{ backgroundColor: t.bg, color: t.fg }}>
       <AlertCircle size={14} className="shrink-0" />
       <span>{notice.text}</span>
-      {!license.canWrite && (
-        <a href="https://wa.me/" target="_blank" rel="noreferrer"
-           className="rounded-md px-2.5 py-1 text-[11px] font-bold text-white"
-           style={{ backgroundColor: t.fg }}>
-          تفعيل الاشتراك
-        </a>
+      {onUpgrade && (
+        <button onClick={onUpgrade}
+                className="rounded-md px-2.5 py-1.5 text-[11px] font-bold text-white"
+                style={{ backgroundColor: t.fg }}>
+          {license.canWrite ? "اشترك الآن" : "تفعيل الاشتراك"}
+        </button>
       )}
     </div>
   );
@@ -859,6 +887,7 @@ function AppInner() {
             ["clients", "العملاء", Users],
             ...(can(currentMember, "viewCostBasis") ? [["pricebook", "دفتر الأسعار", Ruler]] : []),
             ["settings", "الإعدادات", Settings],
+            ...(license.loaded && license.status !== "local" ? [["billing", "الاشتراك", CreditCard]] : []),
             ...(isAdmin ? [["admin", "إدارة المنصّة", ShieldCheck]] : []),
           ].map(([key, label, Icon]) => (
             <button
@@ -908,7 +937,7 @@ function AppInner() {
         onCancel={() => setConfirmState(null)}
       />
 
-      <LicenseBanner license={license} />
+      <LicenseBanner license={license} onUpgrade={() => setTab("billing")} />
 
       <div className="p-3 sm:p-6">
         {tab === "dashboard" && (
@@ -948,6 +977,16 @@ function AppInner() {
             currentMember={currentMember}
             onSave={async (next) => { setPriceBook(next); await storageSet("settings:pricebook", next); }}
           />
+        )}
+
+        {tab === "billing" && (
+          <React.Suspense fallback={
+            <div className="flex h-64 items-center justify-center text-muted">
+              <Loader2 className="animate-spin" size={24} />
+            </div>
+          }>
+            <BillingPanel license={license} onToast={showToast} onError={showError} />
+          </React.Suspense>
         )}
 
         {tab === "admin" && isAdmin && (
@@ -1337,9 +1376,9 @@ function RoomSchedule({ client, onChange }) {
                     onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, type: e.target.value } : x))}>
                     {Object.keys(ROOM_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
-                  <input className="inp num" style={{ width: 74 }} type="number" placeholder="طول"
+                  <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder="طول"
                     value={r.length || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, length: Number(e.target.value) || 0 } : x))} />
-                  <input className="inp num" style={{ width: 74 }} type="number" placeholder="عرض"
+                  <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder="عرض"
                     value={r.width || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, width: Number(e.target.value) || 0 } : x))} />
                   <span className="num text-xs text-muted" style={{ width: 70 }}>{m.area} م²</span>
                   <button onClick={() => setRooms(rooms.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500">
@@ -1424,7 +1463,7 @@ function FinancePanel({ client, rows, currentMember, onChange }) {
               <div key={v.id} className="flex flex-wrap items-center gap-2 border-b pb-2" style={{ borderColor: "var(--color-line)" }}>
                 <input className="inp flex-1" style={{ minWidth: 140 }} placeholder="وصف التغيير"
                   value={v.title || ""} onChange={e => patchVariation(v.id, { title: e.target.value })} />
-                <input className="inp num" style={{ width: 110 }} type="number" placeholder="القيمة"
+                <input className="inp num" style={{ width: 110 }} type="number" inputMode="decimal" placeholder="القيمة"
                   value={v.lines?.[0]?.price ?? ""} disabled={!maySeeCost}
                   onChange={e => patchVariation(v.id, { lines: [{ name: v.title || "تغيير", qty: 1, price: Number(e.target.value) || 0 }] })} />
                 <select className="inp" style={{ width: 150 }} value={v.status}
@@ -1455,7 +1494,7 @@ function FinancePanel({ client, rows, currentMember, onChange }) {
               <div key={r.id} className="flex flex-wrap items-center gap-2">
                 <input className="inp" style={{ width: 140 }} type="date"
                   value={r.date || ""} onChange={e => patchReceipt(r.id, { date: e.target.value })} />
-                <input className="inp num flex-1" style={{ minWidth: 100 }} type="number" placeholder="المبلغ"
+                <input className="inp num flex-1" style={{ minWidth: 100 }} type="number" inputMode="decimal" placeholder="المبلغ"
                   value={r.amount || ""} onChange={e => patchReceipt(r.id, { amount: Number(e.target.value) || 0 })} />
                 <input className="inp flex-1" style={{ minWidth: 120 }} placeholder="ملاحظة"
                   value={r.note || ""} onChange={e => patchReceipt(r.id, { note: e.target.value })} />
@@ -1529,7 +1568,7 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
             <Field label="اسم العميل"><input className="inp" value={client.name} onChange={e => onChange({ name: e.target.value })} /></Field>
             <Field label="رقم الهاتف"><input className="inp" value={client.phone} onChange={e => onChange({ phone: e.target.value })} /></Field>
             <Field label="عنوان المشروع"><input className="inp" value={client.address} onChange={e => onChange({ address: e.target.value })} /></Field>
-            <Field label="المساحة (م²)"><input type="number" className="inp" value={client.area} onChange={e => onChange({ area: e.target.value })} /></Field>
+            <Field label="المساحة (م²)"><input type="number" inputMode="decimal" className="inp" value={client.area} onChange={e => onChange({ area: e.target.value })} /></Field>
             <Field label="مرحلة العميل">
               <select
                 className="inp"
@@ -1840,7 +1879,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                   </div>
                   <div className="col-span-6 sm:col-span-2">
                     <input
-                      type="number"
+                      type="number" inputMode="decimal"
                       disabled={!r.included}
                       className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-40"
                       style={{ border: `1px solid ${BORDER}` }}
@@ -1863,7 +1902,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                   </div>
                   <div className="col-span-6 sm:col-span-2">
                     <input
-                      type="number"
+                      type="number" inputMode="decimal"
                       disabled={!r.included || !mayEditPrice}
                       readOnly={!mayEditPrice}
                       title={mayEditPrice ? "" : "تعديل سعر الوحدة متاح لمدير المشاريع أو مالك المكتب فقط"}
@@ -2182,7 +2221,7 @@ function CloudAuthGate({ onAuthSuccess }) {
     try {
       const sb = getSupabase();
       const { error: err } = await withTimeout(sb.auth.signInWithPassword({ email: email.trim(), password }), 10000);
-      if (err) { setError(`تعذر تسجيل الدخول — رسالة الخادم: ${err.message}`); setBusy(false); return; }
+      if (err) { setError("تعذّر تسجيل الدخول — " + authErrorText(err)); setBusy(false); return; }
       await onAuthSuccess();
     } catch (e) {
       setError("تعذر الاتصال بالخادم — تأكد من صحة رابط ومفتاح Supabase في الإعدادات ومن اتصالك بالإنترنت. (" + (e?.message || "") + ")");
@@ -2206,7 +2245,7 @@ function CloudAuthGate({ onAuthSuccess }) {
         }),
         10000
       );
-      if (err) { setError(`تعذر إنشاء الحساب — رسالة الخادم: ${err.message}`); setBusy(false); return; }
+      if (err) { setError("تعذّر إنشاء الحساب — " + authErrorText(err)); setBusy(false); return; }
       if (!data.session) {
         setPendingConfirm(true);
         setBusy(false);
@@ -2229,11 +2268,28 @@ function CloudAuthGate({ onAuthSuccess }) {
         <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
 
         {pendingConfirm ? (
-          <div className="rounded-lg p-4 text-center text-sm" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
-            تم إنشاء الحساب. تفقّد بريدك الإلكتروني واضغط رابط التأكيد، ثم ارجع هنا وسجّل الدخول.
-            <div className="mt-2 text-xs text-muted">
-              (لو المكتب مش محتاج تأكيد بريد، ألغِ خاصية "Confirm email" من إعدادات Supabase Auth لتسريع الدخول لاحقًا.)
+          <div className="text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full"
+                 style={{ backgroundColor: "#ECFDF5" }}>
+              <Mail size={26} style={{ color: "#047857" }} />
             </div>
+            <div className="mb-2 text-base font-bold text-navy">تفقّد بريدك الإلكتروني</div>
+            <p className="mb-4 text-sm leading-6 text-muted">
+              أرسلنا رابط تأكيد إلى <span className="font-bold" style={{ color: TEXT }}>{email}</span>.
+              اضغط الرابط لتفعيل حسابك، ثم عد إلى هنا لتسجيل الدخول.
+            </p>
+            <div className="rounded-lg p-3 text-right text-xs leading-6" style={{ backgroundColor: "#F8FAFC", color: MUTED }}>
+              <div className="mb-1 font-bold" style={{ color: TEXT }}>لم تجد الرسالة؟</div>
+              • تحقّق من مجلد البريد المزعج (Spam)<br />
+              • قد تستغرق دقيقة أو دقيقتين<br />
+              • تأكّد من صحة البريد الذي كتبته
+            </div>
+            <button
+              onClick={() => { setPendingConfirm(false); setMode("signin"); }}
+              className="mt-4 w-full rounded-lg py-2.5 text-sm font-bold"
+              style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
+              أكّدت بريدي — سجّل الدخول
+            </button>
           </div>
         ) : (
           <>
@@ -2701,15 +2757,15 @@ alter publication supabase_realtime add table profiles;`;
 
         <div className="mb-3 mt-5 h-section">النسب المالية</div>
         <Field label="نسبة أتعاب الإشراف الهندسي %">
-          <input type="number" step="0.1" className="inp" value={(local.supervisionPct * 100).toFixed(1)}
+          <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.supervisionPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, supervisionPct: Number(e.target.value) / 100 })} />
         </Field>
         <Field label="نسبة احتياطي الأعمال غير المنظورة %">
-          <input type="number" step="0.1" className="inp" value={(local.contingencyPct * 100).toFixed(1)}
+          <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.contingencyPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, contingencyPct: Number(e.target.value) / 100 })} />
         </Field>
         <Field label="نسبة ضريبة القيمة المضافة %">
-          <input type="number" step="0.1" className="inp" value={(local.vatPct * 100).toFixed(1)}
+          <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.vatPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })}
             onKeyDown={e => { if (e.key === "Enter") onSave(local); }} />
         </Field>
@@ -2876,7 +2932,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                     <td key={lv} className="p-1 text-center">
                       <div className="num text-[10px] text-muted">بيع {prices[i]}</div>
                       <input
-                        type="number"
+                        type="number" inputMode="decimal"
                         className="num w-16 rounded px-1 py-0.5 text-center text-[11px]"
                         style={{ border: "1px solid var(--color-line)" }}
                         placeholder="تكلفة"

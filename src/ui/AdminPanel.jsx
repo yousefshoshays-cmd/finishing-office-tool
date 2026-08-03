@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Loader2, AlertCircle, RefreshCw, Search } from "lucide-react";
 import { listOrgs, summary, setLicense, setSeats, renameOrg, orgHealth, activityNote } from "../data/admin.js";
+import { pendingPayments, reviewPayment } from "../data/billing.js";
 
 const NAVY = "#1F4E78";
 const BORDER = "#E2E8F0";
@@ -33,13 +34,19 @@ export default function AdminPanel({ onToast, onError }) {
   const [busy, setBusy] = useState(null);
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState(null);
+  const [payments, setPayments] = useState([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [list, s] = await Promise.all([listOrgs(), summary()]);
+      const [list, s, pay] = await Promise.all([
+        listOrgs(),
+        summary(),
+        pendingPayments().catch(() => []),
+      ]);
       setOrgs(list);
       setStats(s);
+      setPayments(pay);
     } catch (e) {
       onError?.("تعذّر تحميل المكاتب: " + e.message);
     } finally {
@@ -120,6 +127,58 @@ export default function AdminPanel({ onToast, onError }) {
         </div>
       )}
 
+      {payments.length > 0 && (
+        <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `2px solid ${TONES.warn.fg}` }}>
+          <div className="mb-3 flex items-center gap-2 text-sm font-bold" style={{ color: TONES.warn.fg }}>
+            <AlertCircle size={16} />
+            طلبات دفع بانتظار المراجعة ({payments.length})
+          </div>
+          <div className="space-y-2">
+            {payments.map(p => (
+              <div key={p.id} className="rounded-lg p-3" style={{ backgroundColor: "#FFFBEB" }}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold" style={{ color: NAVY }}>{p.org_name}</div>
+                    <div className="mt-0.5 text-[11px]" style={{ color: MUTED }}>
+                      {p.owner_email} · {p.plan_name}
+                    </div>
+                  </div>
+                  <div className="text-sm font-bold" style={{ color: TEXT }}>
+                    {Number(p.amount_egp).toLocaleString("ar-EG")} ج.م
+                  </div>
+                </div>
+                <div className="mt-1.5 text-[11px]" style={{ color: MUTED }}>
+                  الوسيلة: {p.method} · المرجع: <span className="font-bold" style={{ color: TEXT }}>{p.reference || "—"}</span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={async () => {
+                      try { onToast?.(await reviewPayment(p.id, true)); await load(); }
+                      catch (e) { onError?.(e.message); }
+                    }}
+                    className="min-h-[38px] flex-1 rounded-lg px-3 py-2 text-xs font-bold text-white"
+                    style={{ backgroundColor: "#047857" }}>
+                    تأكّدت من التحويل — فعّل
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try { onToast?.(await reviewPayment(p.id, false, "لم يُعثر على التحويل")); await load(); }
+                      catch (e) { onError?.(e.message); }
+                    }}
+                    className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold"
+                    style={{ border: `1px solid ${BORDER}`, color: "#B42318" }}>
+                    رفض
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px]" style={{ color: MUTED }}>
+            راجع وصول المبلغ في حسابك قبل التفعيل. التفعيل يمدّد الاشتراك فورًا.
+          </p>
+        </div>
+      )}
+
       <div className="relative mt-4">
         <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
         <input
@@ -188,41 +247,49 @@ export default function AdminPanel({ onToast, onError }) {
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button disabled={isBusy} onClick={() => act(org, "activate_month")}
-                          className="rounded-lg px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+                          className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
                           style={{ backgroundColor: NAVY }}>
                     تفعيل شهر
                   </button>
                   <button disabled={isBusy} onClick={() => act(org, "activate_year")}
-                          className="rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+                          className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40"
                           style={{ backgroundColor: "#FCE9B5", color: "#8A6D00" }}>
                     تفعيل سنة
                   </button>
                   <button disabled={isBusy} onClick={() => act(org, "extend_trial", 7)}
-                          className="rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+                          className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40"
                           style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
                     +٧ أيام تجربة
                   </button>
-                  <button
-                    disabled={isBusy}
-                    onClick={async () => {
-                      const n = window.prompt(`عدد المقاعد لمكتب "${org.name}"`, String(org.seats));
-                      if (!n) return;
-                      try { onToast?.(await setSeats(org.id, Number(n))); await load(); }
-                      catch (e) { onError?.(e.message); }
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-40"
-                    style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
-                    المقاعد
-                  </button>
+                  <div className="flex items-center gap-1 rounded-lg px-2 py-1"
+                       style={{ border: `1px solid ${BORDER}` }}>
+                    <span className="text-[11px] font-semibold" style={{ color: MUTED }}>مقاعد</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      defaultValue={org.seats}
+                      disabled={isBusy}
+                      className="w-12 rounded px-1 py-0.5 text-center text-xs font-bold"
+                      style={{ border: `1px solid ${BORDER}`, color: TEXT }}
+                      onBlur={async e => {
+                        const n = Number(e.target.value);
+                        if (!n || n === org.seats) return;
+                        try { onToast?.(await setSeats(org.id, n)); await load(); }
+                        catch (err) { onError?.(err.message); e.target.value = org.seats; }
+                      }}
+                      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                    />
+                  </div>
                   {org.status === "suspended" ? (
                     <button disabled={isBusy} onClick={() => act(org, "reactivate")}
-                            className="rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+                            className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40"
                             style={{ border: `1px solid ${BORDER}`, color: "#047857" }}>
                       إعادة تفعيل
                     </button>
                   ) : (
                     <button disabled={isBusy} onClick={() => act(org, "suspend")}
-                            className="rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+                            className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40"
                             style={{ border: `1px solid ${BORDER}`, color: "#B42318" }}>
                       إيقاف
                     </button>
