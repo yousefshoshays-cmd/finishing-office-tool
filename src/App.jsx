@@ -16,6 +16,9 @@ import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, 
 /* كانت هاتان الدالتان تُستخدمان دون استيراد — تبويب دفتر الأسعار كان ينهار عند كل فتح. */
 import { catalogueDriftReport, priceOutliers } from "./domain/suggest.js";
 import { fetchLicense, licenseNotice, LICENSE_UNKNOWN } from "./data/license.js";
+/* لوحة الإدارة تُحمَّل عند الطلب: مدير واحد فقط يحتاجها، فلا داعي لتحميلها للجميع. */
+const AdminPanel = React.lazy(() => import("./ui/AdminPanel.jsx"));
+import { amIPlatformAdmin } from "./data/admin.js";
 import { parseSchedule, parseCSV } from "./domain/importSchedule.js";
 import {
   PAYMENT_STAGES,
@@ -432,6 +435,7 @@ function AppInner() {
   const [errorToast, setErrorToast] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [license, setLicense] = useState(LICENSE_UNKNOWN);
+  const [isAdmin, setIsAdmin] = useState(false);
   /* readOnly: الاشتراك منتهٍ. الأزرار تختفي، والكتابة مرفوضة من قاعدة البيانات أصلًا. */
   const readOnly = license.loaded && !license.canWrite;
   /* مرجع حتى تراه الدوال المحفوظة بـ useCallback دون إعادة إنشائها */
@@ -612,6 +616,7 @@ function AppInner() {
   useEffect(() => {
     let alive = true;
     fetchLicense().then(l => { if (alive) setLicense(l); }).catch(() => {});
+    amIPlatformAdmin().then(v => { if (alive) setIsAdmin(v); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -854,6 +859,7 @@ function AppInner() {
             ["clients", "العملاء", Users],
             ...(can(currentMember, "viewCostBasis") ? [["pricebook", "دفتر الأسعار", Ruler]] : []),
             ["settings", "الإعدادات", Settings],
+            ...(isAdmin ? [["admin", "إدارة المنصّة", ShieldCheck]] : []),
           ].map(([key, label, Icon]) => (
             <button
               key={key}
@@ -942,6 +948,16 @@ function AppInner() {
             currentMember={currentMember}
             onSave={async (next) => { setPriceBook(next); await storageSet("settings:pricebook", next); }}
           />
+        )}
+
+        {tab === "admin" && isAdmin && (
+          <React.Suspense fallback={
+            <div className="flex h-64 items-center justify-center text-sm text-muted">
+              <Loader2 className="animate-spin" size={24} />
+            </div>
+          }>
+            <AdminPanel onToast={showToast} onError={showError} />
+          </React.Suspense>
         )}
 
         {tab === "settings" && (

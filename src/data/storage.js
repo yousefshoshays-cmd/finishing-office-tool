@@ -129,6 +129,27 @@ export function withTimeout(promise, ms = 8000) {
   ]);
 }
 
+
+/* معرّف مكتب المستخدم الحالي.
+   بعد هجرة تعدّد المكاتب صار مفتاح kv مركّبًا (org_id, key)، فلا بد أن
+   تحمل كل عملية حفظ معرّف المكتب صراحةً وإلا رفضتها قاعدة البيانات. */
+let _orgId = null;
+export async function getOrgId() {
+  if (_orgId) return _orgId;
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return null;
+    const { data } = await sb.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+    _orgId = data?.org_id || null;
+    return _orgId;
+  } catch {
+    return null;
+  }
+}
+export function clearOrgCache() { _orgId = null; }
+
 export async function cloudGet(key, fallback) {
   const sb = getSupabase();
   try {
@@ -143,7 +164,12 @@ export async function cloudGet(key, fallback) {
 export async function cloudSet(key, value) {
   const sb = getSupabase();
   try {
-    const { error } = await withTimeout(sb.from("kv").upsert({ key, value, updated_at: new Date().toISOString() }));
+    const orgId = await getOrgId();
+    const row = { key, value, updated_at: new Date().toISOString() };
+    if (orgId) row.org_id = orgId;
+    const { error } = await withTimeout(
+      sb.from("kv").upsert(row, orgId ? { onConflict: "org_id,key" } : undefined)
+    );
     return !error;
   } catch (e) {
     console.error("cloudSet failed", key, e);
