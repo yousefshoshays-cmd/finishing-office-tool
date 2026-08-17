@@ -42,6 +42,7 @@ export function roomMetrics(r) {
    تُستخدم كاقتراح يملأ حقول الكميات — لا تفرض نفسها على تجاوز يدوي قائم. */
 export function deriveQuantities(rooms) {
   let floorArea = 0, wetWallArea = 0, dryPerimeter = 0, ceilingArea = 0;
+  let wallArea = 0;                       // كل الحوائط: رطبة وجافة — أساس المحارة والدهان
   let bathrooms = 0, totalRooms = 0;
 
   for (const r of rooms || []) {
@@ -49,6 +50,7 @@ export function deriveQuantities(rooms) {
     const m = roomMetrics(r);
     floorArea += m.area;
     totalRooms += m.count;
+    wallArea += m.wallArea;
     if (t.ceiling) ceilingArea += m.area;
     if (t.wet) wetWallArea += m.wallArea;
     if (t.skirting) dryPerimeter += m.perimeter;
@@ -57,6 +59,8 @@ export function deriveQuantities(rooms) {
 
   return {
     floorArea:    round2(floorArea),
+    wallArea:     round2(wallArea),
+    plasterArea:  round2(wallArea + ceilingArea),   // محارة الحوائط + بياض الأسقف
     wetWallArea:  round2(wetWallArea),
     dryPerimeter: round2(dryPerimeter),
     ceilingArea:  round2(ceilingArea),
@@ -73,6 +77,8 @@ export const QUANTITY_MAP = {
   "FIN-003": (d) => d.dryPerimeter,    // وزرة / سكيرتنج
   "FIN-004": (d) => d.ceilingArea,     // أسقف جبس بورد
   "STR-005": (d) => d.wetWallArea > 0 ? d.floorArea * 0.18 : 0,  // عزل مائي
+  "PLS-001": (d) => d.plasterArea,     // محارة الحوائط + بياض الأسقف
+  "FIN-006": (d) => d.plasterArea,     // الدهانات: نفس السطح المُحضَّر
 };
 
 export function suggestedQuantities(rooms) {

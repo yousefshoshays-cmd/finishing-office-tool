@@ -6,12 +6,16 @@ import {
 
 import {
   getCloudConfig, setCloudConfig, isCloudMode, isSimpleMode, getSupabase, withTimeout,
-  storageGet, storageSet, storageDelete, storageListKeys, storageGetAllEntries,
+  storageGet, storageSet, storageDelete, storageListKeys, storageGetAllEntries, clearOrgCache,
   DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY,
 } from "./data/storage.js";
 import { fetchMyProfile, fetchAllProfiles, approveProfile } from "./data/profiles.js";
 import { newVisit, loadVisits, saveVisit, deleteVisitEntry } from "./data/visits.js";
-import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin, marginHealth, newCustomItem } from "./domain/pricebook.js";
+import { DEFAULT_PRICEBOOK, catalogueWithCustom, projectMargin, updateBookItem, staleItems, itemMargin, marginHealth, newCustomItem,
+  itemAnalysis, setItemAnalysis, costAnalysis } from "./domain/pricebook.js";
+import {
+  COST_KINDS, KIND_LABEL, KIND_SHORT, KIND_COLOR, analysisTotal, analysisShares,
+} from "./domain/costing.js";
 /* كانت هاتان الدالتان تُستخدمان دون استيراد — تبويب دفتر الأسعار كان ينهار عند كل فتح. */
 import { catalogueDriftReport, priceOutliers } from "./domain/suggest.js";
 import { fetchLicense, licenseNotice, LICENSE_UNKNOWN } from "./data/license.js";
@@ -21,9 +25,10 @@ const BillingPanel = React.lazy(() => import("./ui/BillingPanel.jsx"));
 import { amIPlatformAdmin } from "./data/admin.js";
 import { parseSchedule, parseCSV } from "./domain/importSchedule.js";
 import {
-  PAYMENT_STAGES,
   VARIATION_STATUS, newVariation, variationTotal, contractValue,
-  newReceipt, paymentPlan, newExpense, budgetVariance, projectCashPosition,
+  newReceipt, newExpense,
+  phasePaymentPlan, phaseBudget, agreedProfitPct, markPhaseDelivered, unmarkPhaseDelivered,
+  newContractor, contractorLedger, plannedVsActual, siteSpendByKind, itemActualCost,
 } from "./domain/finance.js";
 import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, suggestedQuantities, applySuggestions } from "./domain/rooms.js";
 import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
@@ -31,12 +36,13 @@ import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, huma
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS, officeLine } from "./domain/catalogue.js";
 import {
-  newClient, resolveItem, calcClient, migrateClient, progressFromVisits,
+  newClient, resolveItem, calcClient, calcByPhase, migrateClient, progressFromVisits,
   ownsClient, linkEngineer, buildContractSnapshot, amendContract, effectiveTotals,
 } from "./domain/pricing.js";
 import {
   NAVY, NAVY_DARK, GOLD, LIGHT, BORDER, TEXT, MUTED,
   LEVELS, LEVEL_COLORS, SCOPES, STAGES, STAGE_COLORS,
+  PHASES, PHASE_COLORS, PHASE_SHORT,
 } from "./ui/tokens.js";
 /* مكتبات التصدير (exceljs / docx / pptxgenjs) تزن أكثر من 1.3 ميجابايت مجتمعة.
    تُحمَّل الآن عند أول ضغطة على زر تصدير فقط، لا عند فتح التطبيق. */
@@ -205,7 +211,7 @@ function TeamInvite({ license }) {
   );
 }
 
-function ClientsTable({ clients, settings, onUpdate }) {
+function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate }) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
 
@@ -301,7 +307,7 @@ function ClientsTable({ clients, settings, onUpdate }) {
                     <td className="p-3 text-center"><Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} /></td>
                     <td className="p-3 text-center font-bold text-navy">{fmt(calc.grandTotal)} ج.م</td>
                     <td className="p-3 text-center">
-                      <button onClick={() => exportFullBOQ(c, settings)} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
+                      <button onClick={() => exportFullBOQ(c, settings, { includeCost: can(currentMember, "viewCostBasis"), priceBook })} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
                         <FileSpreadsheet size={13} /> تحميل
                       </button>
                     </td>
@@ -624,6 +630,14 @@ function AppInner() {
   const signOut = async () => {
     setCurrentMember(null);
     setPendingApproval(false);
+    /* مسح كل ما يخصّ المكتب السابق قبل دخول مستخدم آخر.
+       بدون هذا، يُكتب عمل المستخدم الجديد في مكتب من سبقه. */
+    clearOrgCache();
+    setClients([]);
+    setSelectedId(null);
+    setLicense(LICENSE_UNKNOWN);
+    setIsAdmin(false);
+    setTab("dashboard");
     if (cloud) {
       const sb = getSupabase();
       await sb.auth.signOut();
@@ -949,7 +963,7 @@ function AppInner() {
             <ClientList clients={visibleClients} onAdd={addClient} onSelect={setSelectedId} onDelete={deleteClient} settings={settings} />
             {visibleClients.length > 0 && (
               <div className="mt-8 border-t pt-6" style={{ borderColor: BORDER }}>
-                <ClientsTable clients={visibleClients} settings={settings} onUpdate={updateClient} />
+                <ClientsTable clients={visibleClients} settings={settings} currentMember={currentMember} priceBook={priceBook} onUpdate={updateClient} />
               </div>
             )}
           </>
@@ -1411,11 +1425,671 @@ function RoomSchedule({ client, onChange }) {
   );
 }
 
-function FinancePanel({ client, rows, currentMember, onChange }) {
+/* ═══════════════════ المقايسة موزّعة على المراحل الخمس ═══════════════════
+   هذا هو العرض الذي يُقدَّم للعميل: كل مرحلة بقيمتها كاملة، وما يُحصَّل
+   قبل بدئها وما يُحصَّل بعد تسليمها. الأرقام نفسها الموجودة في ملخص السعر
+   — لكن مقسّمة على تسلسل التنفيذ بدل نطاقات العمل. */
+export function PhaseBOQ({ client, settings, currentMember, onChange }) {
+  const byPhase = useMemo(() => calcByPhase(client, settings), [client, settings]);
+  const plan = useMemo(() => phasePaymentPlan(client, settings, byPhase), [client, settings, byPhase]);
+  const [openPhase, setOpenPhase] = useState(null);
+  const mayEditPrice = can(currentMember, "editUnitPrice");
+  const usingOfficeDefault = client.agreedProfitPct === undefined || client.agreedProfitPct === "" || client.agreedProfitPct === null;
+
+  return (
+    <div className="sheet mt-4 p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-bold text-navy">المقايسة بمراحل التنفيذ الخمس</div>
+          <div className="text-[11px] text-muted">
+            قيمة كل مرحلة تُحصَّل كاملة قبل بدء العمل فيها · نسبة الربح تُحصَّل بعد تسليم المرحلة وقبولها
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="lbl">نسبة الربح المتفق عليها</span>
+          <input
+            type="number" inputMode="decimal" step="0.5" min="0" max="100"
+            disabled={!mayEditPrice}
+            className="w-20 rounded-md px-2 py-1 text-xs font-bold disabled:opacity-40"
+            style={{ border: `1px solid ${plan.pctMissing ? "#C00000" : BORDER}`, textAlign: "center" }}
+            value={usingOfficeDefault ? "" : (Number(client.agreedProfitPct) * 100).toFixed(1)}
+            placeholder={((Number(settings.agreedProfitPct) || 0) * 100).toFixed(1)}
+            onChange={e => onChange({
+              agreedProfitPct: e.target.value === "" ? undefined : Number(e.target.value) / 100,
+            })}
+          />
+          <span className="text-xs font-bold text-muted">%</span>
+        </div>
+      </div>
+
+      {plan.pctMissing && (
+        <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold"
+             style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+          لم تُحدَّد نسبة الربح — كل أعمدة الربح ستظهر صفرًا. اضبطها هنا لهذا العميل، أو من الإعدادات لكل العملاء.
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {plan.rows.map((row, i) => {
+          const p = byPhase.phases[i];
+          const color = PHASE_COLORS[row.phase] || NAVY;
+          const isOpen = openPhase === row.phase;
+          return (
+            <div key={row.phase} className="rounded-lg" style={{ border: `1px solid ${BORDER}`, opacity: row.empty ? 0.55 : 1 }}>
+              <button
+                onClick={() => setOpenPhase(isOpen ? null : row.phase)}
+                className="flex w-full flex-wrap items-center gap-2 p-3 text-right"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                      style={{ backgroundColor: color }}>{row.order}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold" style={{ color }}>{row.phase}</span>
+                  <span className="block text-[10px] text-muted">
+                    {row.empty ? "لا بنود مُضمَّنة" : `${row.itemCount} بند · بنود ${fmt(row.base)} + إشراف واحتياطي وضريبة`}
+                  </span>
+                </span>
+                <span className="text-left">
+                  <span className="lbl block">قبل البدء</span>
+                  <span className="num block text-sm font-bold text-navy">{fmt(row.quote)}</span>
+                </span>
+                <span className="text-left" style={{ minWidth: 88 }}>
+                  <span className="lbl block">بعد التسليم</span>
+                  <span className="num block text-sm font-bold" style={{ color: row.profitDue > 0 ? "#1E7B45" : MUTED }}>
+                    {fmt(row.profitDue)}
+                  </span>
+                </span>
+                <span className="text-left" style={{ minWidth: 92 }}>
+                  <span className="lbl block">إجمالي المرحلة</span>
+                  <span className="num block text-sm font-bold" style={{ color: "#8A6D00" }}>{fmt(row.phaseTotal)}</span>
+                </span>
+                <ChevronLeft size={14} style={{ transform: isOpen ? "rotate(-90deg)" : "none", color: MUTED }} />
+              </button>
+
+              {isOpen && !row.empty && (
+                <div className="border-t px-3 py-2" style={{ borderColor: BORDER }}>
+                  {p.lines.filter(l => l.included).map(l => (
+                    <div key={l.id} className="flex items-center justify-between gap-2 border-b py-1 last:border-0"
+                         style={{ borderColor: "var(--color-line)" }}>
+                      <span className="min-w-0 flex-1 text-[11px]">{l.name}</span>
+                      <span className="text-[10px] text-muted">{Math.round(l.qty * 100) / 100} {l.unit}</span>
+                      <span className="num w-24 text-left text-[11px] font-bold text-navy">{fmt(l.total)} ج.م</span>
+                    </div>
+                  ))}
+                  <div className="mt-2 flex flex-col gap-0.5 text-[11px]">
+                    <div className="flex justify-between"><span className="text-muted">إجمالي البنود</span><span className="num font-bold">{fmt(p.base)}</span></div>
+                    {p.supervision > 0 && <div className="flex justify-between"><span className="text-muted">إشراف هندسي</span><span className="num">{fmt(p.supervision)}</span></div>}
+                    {p.contingency > 0 && <div className="flex justify-between"><span className="text-muted">احتياطي</span><span className="num">{fmt(p.contingency)}</span></div>}
+                    <div className="flex justify-between"><span className="text-muted">ضريبة القيمة المضافة</span><span className="num">{fmt(p.vat)}</span></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 border-t pt-3" style={{ borderColor: BORDER }}>
+        <SummaryRow label="إجمالي المقايسة (يُحصَّل قبل المراحل)" value={plan.quoteTotal} />
+        <SummaryRow label={`إجمالي الربح ${plan.pct > 0 ? `(${(plan.pct * 100).toFixed(1)}%)` : ""} — بعد التسليمات`} value={plan.profitTotal} />
+        <SummaryRow label="إجمالي قيمة التعاقد" value={plan.contractTotal} bold />
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ جدول التحصيل بالمراحل ═══════════════════
+   العمود الفقري النقدي للمشروع: ما يجب تحصيله قبل كل مرحلة،
+   وما يُستحق بعد تسليمها — ومنع اعتبار مرحلة جاهزة قبل تحصيلها. */
+export function PhaseCollection({ client, settings, currentMember, onChange }) {
+  const byPhase = useMemo(() => calcByPhase(client, settings), [client, settings]);
+  const plan = useMemo(() => phasePaymentPlan(client, settings, byPhase), [client, settings, byPhase]);
+  const mayCollect = can(currentMember, "editUnitPrice");
+
+  const addReceiptFor = (row, kind) => {
+    const list = [...(client.receipts || [])];
+    const rc = newReceipt(client.id, list.length + 1, row.phase, kind);
+    rc.amount = Math.round(kind === "profit" ? row.profitRemaining : row.baseRemaining);
+    rc.note = `${kind === "profit" ? "ربح" : "قيمة"} — ${row.phase}`;
+    onChange({ receipts: [...list, rc] });
+  };
+  const toggleDelivered = (row) => {
+    onChange({
+      phaseDelivered: row.deliveredAt
+        ? unmarkPhaseDelivered(client, row.phase)
+        : markPhaseDelivered(client, row.phase),
+    });
+  };
+
+  const STATUS_STYLE = {
+    empty:     { bg: "#F5F7FA", fg: "#9CA3AF" },
+    awaiting:  { bg: "#FDECEC", fg: "#C00000" },
+    ready:     { bg: "#E8EEF7", fg: "#1F4E78" },
+    profitDue: { bg: "#FFF7E6", fg: "#B45309" },
+    done:      { bg: "#E2EFDA", fg: "#1E7B45" },
+  };
+
+  return (
+    <div className="sheet p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="h-section">جدول التحصيل بالمراحل</span>
+        <span className="text-[11px] text-muted">نسبة الربح {(plan.pct * 100).toFixed(1)}%</span>
+      </div>
+
+      <div className="mb-3 grid grid-cols-3 gap-2">
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: "#E2EFDA" }}>
+          <div className="lbl">المحصّل</div>
+          <div className="num text-sm font-bold" style={{ color: "#1E7B45" }}>{fmt(plan.collected)}</div>
+        </div>
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: plan.dueNow > 0 ? "#FDECEC" : "#F5F7FA" }}>
+          <div className="lbl">المستحق الآن</div>
+          <div className="num text-sm font-bold" style={{ color: plan.dueNow > 0 ? "#C00000" : MUTED }}>{fmt(plan.dueNow)}</div>
+        </div>
+        <div className="rounded-lg p-2.5 text-center bg-light">
+          <div className="lbl">المتبقي على التعاقد</div>
+          <div className="num text-sm font-bold text-navy">{fmt(plan.outstanding)}</div>
+        </div>
+      </div>
+
+      {plan.unallocated > 0 && (
+        <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+          {fmt(plan.unallocated)} ج.م محصّلة غير منسوبة لأي مرحلة — دفعات سُجّلت قبل تفعيل نظام المراحل. انسبها من قائمة الدفعات أدناه.
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {plan.rows.map(row => {
+          const st = STATUS_STYLE[row.status];
+          const color = PHASE_COLORS[row.phase] || NAVY;
+          return (
+            <div key={row.phase} className="rounded-lg p-3" style={{ border: `1px solid ${BORDER}`, opacity: row.empty ? 0.5 : 1 }}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                      style={{ backgroundColor: color }}>{row.order}</span>
+                <span className="min-w-0 flex-1 text-sm font-bold" style={{ color }}>{row.phase}</span>
+                <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                      style={{ backgroundColor: st.bg, color: st.fg }}>
+                  {row.statusLabel}
+                </span>
+              </div>
+
+              {!row.empty && (
+                <>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {/* الدفعة الأولى — قبل البدء */}
+                    <div className="rounded-lg p-2.5" style={{ backgroundColor: row.baseSettled ? "#E2EFDA" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
+                      <div className="flex items-baseline justify-between">
+                        <span className="lbl">قيمة المرحلة — قبل البدء</span>
+                        <span className="num text-sm font-bold text-navy">{fmt(row.quote)}</span>
+                      </div>
+                      <div className="mt-1 h-1 w-full" style={{ backgroundColor: "#E3E7EE" }}>
+                        <div style={{ height: 4, width: `${row.quote > 0 ? Math.min(100, (row.paidBase / row.quote) * 100) : 100}%`, backgroundColor: "#1E7B45" }} />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between">
+                        <span className="text-[10px] text-muted">
+                          محصّل {fmt(row.paidBase)} · متبقٍ {fmt(row.baseRemaining)}
+                        </span>
+                        {mayCollect && row.baseRemaining > 0.5 && (
+                          <button onClick={() => addReceiptFor(row, "base")}
+                                  className="text-[10px] font-bold underline" style={{ color: NAVY }}>
+                            تسجيل تحصيل
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* الدفعة الثانية — بعد التسليم */}
+                    <div className="rounded-lg p-2.5" style={{ backgroundColor: row.deliveredAt && row.profitSettled ? "#E2EFDA" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
+                      <div className="flex items-baseline justify-between">
+                        <span className="lbl">نسبة الربح — بعد التسليم</span>
+                        <span className="num text-sm font-bold" style={{ color: "#1E7B45" }}>{fmt(row.profitDue)}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between">
+                        <span className="text-[10px] text-muted">
+                          {row.deliveredAt
+                            ? `سُلّمت ${row.deliveredAt} · محصّل ${fmt(row.paidProfit)}`
+                            : "غير مستحقة — المرحلة لم تُسلَّم بعد"}
+                        </span>
+                        {mayCollect && row.profitClaimable && row.profitRemaining > 0.5 && (
+                          <button onClick={() => addReceiptFor(row, "profit")}
+                                  className="text-[10px] font-bold underline" style={{ color: "#1E7B45" }}>
+                            تسجيل تحصيل
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    {!row.mayStart ? (
+                      <span className="text-[11px] font-bold" style={{ color: "#C00000" }}>
+                        ⛔ لا تبدأ التنفيذ — لم يُحصَّل {fmt(row.baseRemaining)} ج.م من قيمة المرحلة
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-bold" style={{ color: "#1E7B45" }}>
+                        ✅ قيمة المرحلة محصّلة — مسموح بالبدء
+                      </span>
+                    )}
+                    {mayCollect && (
+                      <button onClick={() => toggleDelivered(row)}
+                              className="rounded-md px-2.5 py-1 text-[11px] font-bold"
+                              style={{
+                                backgroundColor: row.deliveredAt ? "#FFFFFF" : NAVY,
+                                color: row.deliveredAt ? "#C00000" : "#FFFFFF",
+                                border: `1px solid ${row.deliveredAt ? "#C00000" : NAVY}`,
+                              }}>
+                        {row.deliveredAt ? "إلغاء تعليم التسليم" : "تعليم المرحلة مُسلَّمة"}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* شريط نِسَب الفئات — يُستعمل في التحليل وفي المقارنة */
+function KindBar({ kinds, total }) {
+  const t = total || COST_KINDS.reduce((s, k) => s + (kinds[k] || 0), 0);
+  if (!(t > 0)) return null;
+  return (
+    <>
+      <div className="flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E3E7EE" }}>
+        {COST_KINDS.filter(k => (kinds[k] || 0) > 0).map(k => (
+          <div key={k} title={`${KIND_LABEL[k]} — ${fmt(kinds[k])} ج.م`}
+               style={{ width: `${((kinds[k] || 0) / t) * 100}%`, backgroundColor: KIND_COLOR[k] }} />
+        ))}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
+        {COST_KINDS.filter(k => (kinds[k] || 0) > 0).map(k => (
+          <span key={k} style={{ color: KIND_COLOR[k] }}>
+            {KIND_SHORT[k]} <b className="num">{fmt(kinds[k])}</b> ({(((kinds[k] || 0) / t) * 100).toFixed(0)}%)
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════ تحليل تكلفة المشروع ═══════════════════
+   الوجه المخطَّط من المعادلة: كم قدّرنا لكل فئة، مرحلةً مرحلة وبندًا بندًا.
+   يُعرض فقط لمن يرى أساس التكلفة — المهندس المنفّذ لا يرى تكاليف المكتب. */
+export function CostAnalysis({ client, priceBook, currentMember }) {
+  const [openPhase, setOpenPhase] = useState(null);
+  const analysis = useMemo(() => {
+    const list = catalogueWithCustom(priceBook);
+    const rows = list.map(it => resolveItem(client, it, Number(client.area) || 0));
+    return costAnalysis(priceBook, rows, Object.fromEntries(list.map(i => [i[5], i])));
+  }, [client, priceBook]);
+
+  if (!can(currentMember, "viewCostBasis")) return null;
+
+  return (
+    <div className="sheet mt-4 p-4">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <span className="h-section">تحليل تكلفة المشروع</span>
+        <span className="num text-sm font-bold text-navy">{fmt(analysis.totalCost)} ج.م</span>
+      </div>
+      <div className="mb-3 text-[11px] text-muted">
+        من دفتر الأسعار — بنفس التصنيف الذي تُسجَّل به مصروفات الموقع، فتصبح المقارنة ممكنة.
+      </div>
+
+      {analysis.totalCost > 0 && (
+        <div className="mb-3"><KindBar kinds={analysis.byKind} total={analysis.totalCost} /></div>
+      )}
+
+      {!analysis.complete && (
+        <div className="mb-3 rounded-lg px-3 py-2 text-[11px] leading-5"
+             style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+          {analysis.coverage === 0
+            ? "لا يوجد بند محلَّل بعد — حلّل البنود من دفتر الأسعار ليصبح لهذا التقرير معنى."
+            : `التحليل يغطي ${(analysis.coverage * 100).toFixed(0)}% من قيمة المشروع — ${analysis.unanalysed.length} بندًا بلا تحليل.`}
+          {analysis.unanalysed.length > 0 && (
+            <div className="mt-1">أكبرها: {analysis.unanalysed.slice(0, 3).map(u => u.name).join(" · ")}</div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {analysis.phases.filter(p => p.total > 0).map(p => {
+          const isOpen = openPhase === p.phase;
+          return (
+            <div key={p.phase} className="rounded-lg p-2.5" style={{ border: `1px solid ${BORDER}` }}>
+              <button onClick={() => setOpenPhase(isOpen ? null : p.phase)}
+                      className="flex w-full flex-wrap items-baseline justify-between gap-2 text-right">
+                <span className="text-xs font-bold" style={{ color: PHASE_COLORS[p.phase] || NAVY }}>{p.phase}</span>
+                <span className="num text-xs font-bold text-navy">
+                  {fmt(p.analysed)} ج.م
+                  {p.unanalysed > 0 && <span className="mr-1 font-normal text-muted"> (+{fmt(p.unanalysed)} غير محلَّل)</span>}
+                </span>
+              </button>
+              {p.analysed > 0 && <div className="mt-1.5"><KindBar kinds={p.kinds} total={p.analysed} /></div>}
+
+              {isOpen && p.items.length > 0 && (
+                <div className="mt-2 border-t pt-2" style={{ borderColor: BORDER }}>
+                  {p.items.map(l => (
+                    <div key={l.id} className="border-b py-1 last:border-0" style={{ borderColor: "var(--color-line)" }}>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <span className="text-[11px] font-semibold">{l.name}</span>
+                        <span className="text-[10px] text-muted">
+                          تكلفة الوحدة <b className="num">{fmt(l.unitCost)}</b> × {Math.round(l.qty * 100) / 100} {l.unit}
+                          {" = "}<b className="num" style={{ color: NAVY }}>{fmt(l.cost)}</b>{" · ربح "}
+                          <b className="num" style={{ color: l.profit >= 0 ? "#1E7B45" : "#C00000" }}>{fmt(l.profit)}</b>
+                          {l.ratio != null && ` (${(l.ratio * 100).toFixed(0)}%)`}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-2 text-[9px]">
+                        {COST_KINDS.filter(k => (l.kinds[k] || 0) > 0).map(k => (
+                          <span key={k} style={{ color: KIND_COLOR[k] }}>{KIND_SHORT[k]} {fmt(l.kinds[k])}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ حسابات مقاولي الباطن ═══════════════════ */
+export function ContractorLedger({ client, onChange }) {
+  const led = useMemo(() => contractorLedger(client), [client]);
+
+  const add = () => {
+    const list = [...(client.contractors || [])];
+    onChange({ contractors: [...list, newContractor(client.id, list.length + 1)] });
+  };
+  const patch = (id, p) =>
+    onChange({ contractors: (client.contractors || []).map(k => k.id === id ? { ...k, ...p } : k) });
+  const remove = (id) =>
+    onChange({ contractors: (client.contractors || []).filter(k => k.id !== id) });
+
+  return (
+    <div className="sheet p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="h-section">حسابات مقاولي الباطن</span>
+        <button onClick={add} className="btn btn-primary"><Plus size={14} /> مقاول</button>
+      </div>
+
+      {led.rows.length === 0 ? (
+        <div className="py-3 text-center text-xs text-muted">
+          لا يوجد مقاولون. أضف المقاول بقيمة تعاقده، ثم اربط مصروفاته به ليُحسب المتبقي والمحتجز تلقائيًا.
+        </div>
+      ) : (
+        <>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[["قيمة التعاقدات", led.contracted, NAVY],
+              ["مصروف فعلي", led.paid, "#C2410C"],
+              ["محتجز ضمان", led.retained, "#B45309"],
+              ["متبقٍ لهم", led.remaining, "#1E7B45"]].map(([lbl, val, col]) => (
+              <div key={lbl} className="rounded-lg p-2 text-center bg-light">
+                <div className="lbl">{lbl}</div>
+                <div className="num text-sm font-bold" style={{ color: col }}>{fmt(val)}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {led.rows.map(k => (
+              <div key={k.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${k.overCertified ? "#C00000" : BORDER}` }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input className="inp" style={{ width: 130, marginBottom: 0 }} placeholder="اسم المقاول"
+                    value={k.name} onChange={e => patch(k.id, { name: e.target.value })} />
+                  <input className="inp" style={{ width: 100, marginBottom: 0 }} placeholder="الصنعة"
+                    value={k.trade} onChange={e => patch(k.id, { trade: e.target.value })} />
+                  <select className="inp" style={{ width: 140, marginBottom: 0 }} value={k.phase || ""}
+                    onChange={e => patch(k.id, { phase: e.target.value })}>
+                    <option value="">— المرحلة —</option>
+                    {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+                  </select>
+                  <input className="inp num" style={{ width: 110, marginBottom: 0 }} type="number" inputMode="decimal"
+                    placeholder="قيمة التعاقد" value={k.contractValue || ""}
+                    onChange={e => patch(k.id, { contractValue: Number(e.target.value) || 0 })} />
+                  <span className="code">{k.id}</span>
+                  <button onClick={() => remove(k.id)} className="text-xs" style={{ color: "#C00000" }}>✕</button>
+                </div>
+
+                <div className="mt-2 h-1.5 w-full" style={{ backgroundColor: "#E3E7EE" }}>
+                  <div style={{ height: 6, width: `${Math.min(100, k.progress * 100)}%`,
+                                backgroundColor: k.overCertified ? "#C00000" : "#1E7B45" }} />
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 text-[10px]">
+                  <span className="text-muted">مستخلصات <b className="num">{k.payments}</b></span>
+                  <span className="text-muted">مصروف <b className="num">{fmt(k.paid)}</b></span>
+                  <span style={{ color: "#B45309" }}>محتجز <b className="num">{fmt(k.retained)}</b></span>
+                  <span className="text-muted">معتمد <b className="num">{fmt(k.certified)}</b></span>
+                  <span style={{ color: k.remaining < 0 ? "#C00000" : "#1E7B45" }}>
+                    متبقٍ <b className="num">{fmt(k.remaining)}</b>
+                  </span>
+                </div>
+                {k.overCertified && (
+                  <div className="mt-1 text-[10px] font-bold" style={{ color: "#C00000" }}>
+                    ⛔ المصروف تجاوز قيمة التعاقد بـ {fmt(-k.remaining)} ج.م — راجع قبل أي صرف آخر
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {led.orphanTotal > 0 && (
+        <div className="mt-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+          {fmt(led.orphanTotal)} ج.م مصروفات مقاولي باطن غير منسوبة لمقاول معيّن
+          ({led.orphanPayments.length} مصروف) — انسبها ليظهر متبقي كل مقاول بدقة.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* المصروف الفعلي مقابل مقايسة كل مرحلة — للمالك ومدير المشاريع فقط */
+export function PhaseSpend({ client, settings, priceBook, onChange }) {
+  const byPhase = useMemo(() => calcByPhase(client, settings), [client, settings]);
+  const bud = useMemo(() => phaseBudget(client, byPhase), [client, byPhase]);
+  const analysis = useMemo(() => {
+    const list = catalogueWithCustom(priceBook || DEFAULT_PRICEBOOK);
+    const rows = list.map(it => resolveItem(client, it, Number(client.area) || 0));
+    return costAnalysis(priceBook || DEFAULT_PRICEBOOK, rows, Object.fromEntries(list.map(i => [i[5], i])));
+  }, [client, priceBook]);
+  const pva = useMemo(() => plannedVsActual(client, analysis), [client, analysis]);
+  const contractors = client.contractors || [];
+  const [openPhase, setOpenPhase] = useState(null);
+
+  const addExpense = (phase) => {
+    const list = [...(client.expenses || [])];
+    onChange({ expenses: [...list, newExpense(client.id, list.length + 1, phase)] });
+  };
+  const patchExpense = (id, patch) => {
+    onChange({ expenses: (client.expenses || []).map(e => e.id === id ? { ...e, ...patch } : e) });
+  };
+  const removeExpense = (id) => onChange({ expenses: (client.expenses || []).filter(e => e.id !== id) });
+
+  return (
+    <div className="sheet p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="h-section">مصروفات الموقع مقابل المقايسة</span>
+        <button onClick={() => addExpense("")} className="btn btn-primary"><Plus size={14} /> مصروف</button>
+      </div>
+      <div className="mb-3 text-[11px] leading-5 text-muted">
+        كل مصروف يُصنَّف بنفس فئات تحليل السعر — فيصبح السؤال قابلًا للإجابة:
+        هل التجاوز في الخامة أم في العمالة أم في المقاول؟ المصروف بلا بند (ونش، نقل، أمن)
+        يُعتبر غير مباشر ويُوزَّع على بنود مرحلته بالتناسب.
+      </div>
+
+      {/* الإجمالي بالفئة: مخطط مقابل فعلي */}
+      {(pva.plannedTotal > 0 || pva.spentTotal > 0) && (
+        <div className="mb-3 rounded-lg p-3" style={{ border: `1px solid ${BORDER}` }}>
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <span className="lbl">إجمالي المشروع بالفئة</span>
+            <span className="text-[11px]">
+              <span className="text-muted">مخطط </span>
+              <b className="num">{fmt(pva.plannedTotal)}</b>
+              <span className="text-muted"> · فعلي </span>
+              <b className="num" style={{ color: pva.diff < 0 ? "#C00000" : "#1E7B45" }}>{fmt(pva.spentTotal)}</b>
+            </span>
+          </div>
+          {pva.totals.filter(t => t.planned > 0 || t.spent > 0).map(t => {
+            const max = Math.max(t.planned, t.spent) || 1;
+            return (
+              <div key={t.kind} className="mb-1.5">
+                <div className="flex items-baseline justify-between text-[10px]">
+                  <span style={{ color: KIND_COLOR[t.kind] }}>{KIND_LABEL[t.kind]}</span>
+                  <span className="num">
+                    <span className="text-muted">{fmt(t.planned)}</span>
+                    {" → "}
+                    <b style={{ color: t.overrun ? "#C00000" : "#1E7B45" }}>{fmt(t.spent)}</b>
+                    {t.overrun && <span style={{ color: "#C00000" }}> (+{fmt(-t.diff)})</span>}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex gap-0.5">
+                  <div style={{ height: 5, width: `${(t.planned / max) * 100}%`, backgroundColor: KIND_COLOR[t.kind], opacity: 0.35 }} />
+                </div>
+                <div className="flex gap-0.5">
+                  <div style={{ height: 5, width: `${(t.spent / max) * 100}%`, backgroundColor: t.overrun ? "#C00000" : KIND_COLOR[t.kind] }} />
+                </div>
+              </div>
+            );
+          })}
+          {pva.worstKind && (
+            <div className="mt-2 text-[10px] font-bold" style={{ color: "#C00000" }}>
+              أكبر تجاوز في {KIND_LABEL[pva.worstKind.kind]}: {fmt(pva.worstKind.spent - pva.worstKind.planned)} ج.م فوق المخطط
+            </div>
+          )}
+          {pva.coverage < 1 && (
+            <div className="mt-1 text-[10px]" style={{ color: "#8A6D00" }}>
+              التحليل يغطي {(pva.coverage * 100).toFixed(0)}% من المشروع — المقارنة تخصّ المحلَّل وحده.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* كل مرحلة: قيمة المقايسة، المصروف، والتفصيل بالفئة */}
+      <div className="flex flex-col gap-2">
+        {bud.lines.map((l) => {
+          const ph = pva.phases.find(x => x.phase === l.phase);
+          const isOpen = openPhase === l.phase;
+          return (
+            <div key={l.phase} className="rounded-lg p-2.5" style={{ border: `1px solid ${BORDER}`, opacity: l.empty ? 0.5 : 1 }}>
+              <button onClick={() => setOpenPhase(isOpen ? null : l.phase)}
+                      className="flex w-full flex-wrap items-center justify-between gap-2 text-right">
+                <span className="text-xs font-bold" style={{ color: PHASE_COLORS[l.phase] || NAVY }}>{l.phase}</span>
+                <span className="num text-xs font-bold" style={{ color: l.overrun ? "#C00000" : "#1E7B45" }}>
+                  {fmt(l.spent)} / {fmt(l.planned)} ج.م
+                </span>
+              </button>
+              <div className="mt-1 h-1.5 w-full" style={{ backgroundColor: "#E3E7EE" }}>
+                <div style={{ height: 6, width: `${Math.min(100, l.ratio * 100)}%`, backgroundColor: l.overrun ? "#C00000" : "#1E7B45" }} />
+              </div>
+              {l.overrun && (
+                <div className="mt-1 text-[10px] font-bold" style={{ color: "#C00000" }}>
+                  تجاوز {fmt(-l.diff)} ج.م فوق قيمة بنود المقايسة
+                </div>
+              )}
+              {ph && ph.indirect > 0 && (
+                <div className="mt-1 text-[10px]" style={{ color: "#8A6D00" }}>
+                  منها {fmt(ph.indirect)} ج.م مصروفات غير مباشرة (معدات ونقل وخلافه) تُوزَّع على بنود المرحلة
+                </div>
+              )}
+
+              {isOpen && ph && (
+                <div className="mt-2 border-t pt-2" style={{ borderColor: BORDER }}>
+                  {!ph.comparable ? (
+                    <div className="text-[10px]" style={{ color: "#8A6D00" }}>
+                      لا يوجد تحليل سعر لبنود هذه المرحلة — المقارنة بالفئة بلا معنى حتى تُحلَّل من دفتر الأسعار.
+                    </div>
+                  ) : ph.kinds.filter(k => !k.silent).map(k => (
+                    <div key={k.kind} className="flex items-baseline justify-between border-b py-1 last:border-0 text-[10px]"
+                         style={{ borderColor: "var(--color-line)" }}>
+                      <span style={{ color: KIND_COLOR[k.kind] }}>{KIND_LABEL[k.kind]}</span>
+                      <span className="num">
+                        <span className="text-muted">مخطط {fmt(k.planned)}</span>
+                        {" · "}
+                        <b style={{ color: k.overrun ? "#C00000" : "#1E7B45" }}>فعلي {fmt(k.spent)}</b>
+                        {k.overrun && <span style={{ color: "#C00000" }}> (+{fmt(-k.diff)})</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {(client.expenses || []).length > 0 && (
+        <div className="mt-3 border-t pt-3" style={{ borderColor: BORDER }}>
+          <div className="lbl mb-2">سجل مصروفات الموقع</div>
+          <div className="flex flex-col gap-2">
+            {(client.expenses || []).map(e => (
+              <div key={e.id} className="rounded-lg p-2" style={{ backgroundColor: LIGHT }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input className="inp" style={{ width: 128, marginBottom: 0 }} type="date"
+                    value={e.date || ""} onChange={ev => patchExpense(e.id, { date: ev.target.value })} />
+                  <select className="inp" style={{ width: 140, marginBottom: 0 }}
+                    value={COST_KINDS.includes(e.kind) ? e.kind : "other"}
+                    onChange={ev => patchExpense(e.id, { kind: ev.target.value })}>
+                    {COST_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                  </select>
+                  <select className="inp" style={{ width: 140, marginBottom: 0 }} value={e.phase || ""}
+                    onChange={ev => patchExpense(e.id, { phase: ev.target.value })}>
+                    <option value="">— بلا مرحلة —</option>
+                    {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+                  </select>
+                  <input className="inp num" style={{ width: 100, marginBottom: 0 }} type="number" inputMode="decimal" placeholder="المبلغ"
+                    value={e.amount || ""} onChange={ev => patchExpense(e.id, { amount: Number(ev.target.value) || 0 })} />
+                  <input className="inp flex-1" style={{ minWidth: 110, marginBottom: 0 }} placeholder="المورد / البيان"
+                    value={e.vendor || ""} onChange={ev => patchExpense(e.id, { vendor: ev.target.value })} />
+                  <button onClick={() => removeExpense(e.id)} className="text-xs" style={{ color: "#C00000" }}>✕</button>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <select className="inp" style={{ width: 160, marginBottom: 0 }} value={e.itemId || ""}
+                    onChange={ev => patchExpense(e.id, { itemId: ev.target.value })}>
+                    <option value="">— غير مباشر (يُوزَّع) —</option>
+                    {analysis.lines.filter(l => !e.phase || l.phase === e.phase)
+                      .map(l => <option key={l.id} value={l.id}>{l.name.slice(0, 30)}</option>)}
+                  </select>
+                  {e.kind === "subcontract" && (
+                    <>
+                      <select className="inp" style={{ width: 150, marginBottom: 0 }} value={e.contractorId || ""}
+                        onChange={ev => patchExpense(e.id, { contractorId: ev.target.value })}>
+                        <option value="">— المقاول —</option>
+                        {contractors.map(k => <option key={k.id} value={k.id}>{k.name || k.id}</option>)}
+                      </select>
+                      <input className="inp num" style={{ width: 120, marginBottom: 0 }} type="number" inputMode="decimal"
+                        placeholder="محتجز ضمان" value={e.retained || ""}
+                        onChange={ev => patchExpense(e.id, { retained: Number(ev.target.value) || 0 })} />
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex justify-between text-xs font-bold">
+            <span className="text-muted">إجمالي المصروف</span>
+            <span className="num" style={{ color: bud.remaining < 0 ? "#C00000" : TEXT }}>{fmt(bud.spent)} ج.م</span>
+          </div>
+          {pva.unassigned > 0 && (
+            <div className="mt-1 text-[10px]" style={{ color: "#8A6D00" }}>
+              منها {fmt(pva.unassigned)} ج.م بلا مرحلة — لا تدخل مقارنة أي مرحلة حتى تُنسب.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FinancePanel({ client, settings, priceBook, currentMember, onChange }) {
   const maySeeCost = can(currentMember, "viewCostBasis");
   const cv = contractValue(client);
-  const plan = paymentPlan(client);
-  const variance = maySeeCost ? budgetVariance(client, rows) : null;
 
   const addVariation = () => {
     const list = [...(client.variations || [])];
@@ -1434,12 +2108,15 @@ function FinancePanel({ client, rows, currentMember, onChange }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* التحصيل بالمراحل — العمود الفقري النقدي للمشروع */}
+      <PhaseCollection client={client} settings={settings} currentMember={currentMember} onChange={onChange} />
+
       {/* قيمة العقد */}
       <div className="sheet p-4">
         <div className="mb-3 h-section">قيمة العقد</div>
-        <SummaryRow label={`الأصل — متعاقد ${client.contract.signedAt}`} value={fmt(cv.base) + " ج.م"} />
-        <SummaryRow label="أوامر تغيير معتمدة" value={(cv.variations >= 0 ? "+" : "") + fmt(cv.variations) + " ج.م"} />
-        <SummaryRow label="القيمة الحالية" value={fmt(cv.total) + " ج.م"} bold />
+        <SummaryRow label={`الأصل — متعاقد ${client.contract.signedAt}`} value={cv.base} />
+        <SummaryRow label="أوامر تغيير معتمدة" value={cv.variations} />
+        <SummaryRow label="القيمة الحالية" value={cv.total} bold />
         {cv.pendingCount > 0 && (
           <div className="mt-2 text-xs" style={{ color: "#B45309" }}>
             {cv.pendingCount} أمر تغيير بانتظار موافقة العميل بقيمة {fmt(cv.pendingValue)} ج.م — غير محتسبة أعلاه
@@ -1477,41 +2154,55 @@ function FinancePanel({ client, rows, currentMember, onChange }) {
         )}
       </div>
 
-      {/* التحصيل */}
+      {/* سجل الدفعات — كل دفعة منسوبة لمرحلة ونوع، وإلا لم تُحتسب في جدول التحصيل */}
       <div className="sheet p-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="h-section">التحصيل</span>
+          <span className="h-section">سجل الدفعات</span>
           <button onClick={addReceipt} className="btn btn-primary"><Plus size={14} /> دفعة</button>
         </div>
-        <SummaryRow label="المحصّل" value={fmt(plan.collected) + " ج.م"} />
-        <SummaryRow label="المتبقي" value={fmt(plan.outstanding) + " ج.م"} bold />
-        <div className="mt-2 h-1 w-full bg-light">
-          <div style={{ height: 4, width: `${cv.total > 0 ? Math.min(100, (plan.collected / cv.total) * 100) : 0}%`, backgroundColor: "#1E7B45" }} />
-        </div>
-        {(client.receipts || []).length > 0 && (
-          <div className="mt-3 flex flex-col gap-2">
-            {(client.receipts || []).map(r => (
-              <div key={r.id} className="flex flex-wrap items-center gap-2">
-                <input className="inp" style={{ width: 140 }} type="date"
-                  value={r.date || ""} onChange={e => patchReceipt(r.id, { date: e.target.value })} />
-                <input className="inp num flex-1" style={{ minWidth: 100 }} type="number" inputMode="decimal" placeholder="المبلغ"
-                  value={r.amount || ""} onChange={e => patchReceipt(r.id, { amount: Number(e.target.value) || 0 })} />
-                <input className="inp flex-1" style={{ minWidth: 120 }} placeholder="ملاحظة"
-                  value={r.note || ""} onChange={e => patchReceipt(r.id, { note: e.target.value })} />
-              </div>
-            ))}
+        {(client.receipts || []).length === 0 ? (
+          <div className="py-4 text-center text-xs text-muted">
+            لا توجد دفعات مسجّلة. سجّلها من جدول التحصيل أعلاه ليُنسب كل مبلغ لمرحلته تلقائيًا.
           </div>
+        ) : (
+          <>
+            <div className="mb-2 text-[11px] text-muted">
+              دفعة بلا مرحلة تُحسب في الإجمالي لكنها لا تفتح البدء في أي مرحلة — انسبها هنا.
+            </div>
+            <div className="flex flex-col gap-2">
+              {(client.receipts || []).map(r => (
+                <div key={r.id} className="flex flex-wrap items-center gap-2">
+                  <input className="inp" style={{ width: 130 }} type="date"
+                    value={r.date || ""} onChange={e => patchReceipt(r.id, { date: e.target.value })} />
+                  <select className="inp" style={{ width: 150 }}
+                    value={r.phase || ""}
+                    onChange={e => patchReceipt(r.id, { phase: e.target.value })}>
+                    <option value="">— بلا مرحلة —</option>
+                    {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+                  </select>
+                  <select className="inp" style={{ width: 110 }}
+                    value={r.kind === "profit" ? "profit" : "base"}
+                    onChange={e => patchReceipt(r.id, { kind: e.target.value })}>
+                    <option value="base">قيمة المرحلة</option>
+                    <option value="profit">نسبة الربح</option>
+                  </select>
+                  <input className="inp num" style={{ width: 110 }} type="number" inputMode="decimal" placeholder="المبلغ"
+                    value={r.amount || ""} onChange={e => patchReceipt(r.id, { amount: Number(e.target.value) || 0 })} />
+                  <input className="inp flex-1" style={{ minWidth: 110 }} placeholder="ملاحظة"
+                    value={r.note || ""} onChange={e => patchReceipt(r.id, { note: e.target.value })} />
+                  <button onClick={() => onChange({ receipts: (client.receipts || []).filter(x => x.id !== r.id) })}
+                          className="text-xs" style={{ color: "#C00000" }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
-      {/* الفعلي مقابل المخطط — للمالك والمدير فقط */}
-      {maySeeCost && variance && (
-        <div className="sheet p-4">
-          <div className="mb-3 h-section">الفعلي مقابل المخطط</div>
-          <div className="text-xs text-muted">
-            سجّل مصروفات المشروع لتقارن المنصرف الفعلي بميزانية كل بند.
-          </div>
-        </div>
+      {/* المقاولون ومصروفات الموقع — للمالك والمدير فقط */}
+      {maySeeCost && <ContractorLedger client={client} onChange={onChange} />}
+      {maySeeCost && (
+        <PhaseSpend client={client} settings={settings} priceBook={priceBook} onChange={onChange} />
       )}
     </div>
   );
@@ -1527,7 +2218,9 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
   }, [client, priceBook, currentMember]);
   const [innerTab, setInnerTab] = useState("pricing"); // pricing | site
 
-  const exportExcel = () => exportFullBOQ(client, settings);
+  /* ورقة المصروفات تُدرج فقط لمن يرى أساس التكلفة — المهندس يصدّر المقايسة
+     والتحصيل، ولا يصدّر ما دفعه المكتب لمورديه. */
+  const exportExcel = () => exportFullBOQ(client, settings, { includeCost: can(currentMember, "viewCostBasis"), priceBook });
 
   return (
     <div>
@@ -1650,7 +2343,8 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
           {innerTab === "finance" && client.contract && (
             <FinancePanel
               client={client}
-              rows={ITEMS.map(it => resolveItem(client, it, Number(client.area) || 0))}
+              settings={settings}
+              priceBook={priceBook}
               currentMember={currentMember}
               onChange={onChange}
             />
@@ -1695,6 +2389,9 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
               ))}
             </div>
           </div>
+
+          <PhaseBOQ client={client} settings={settings} currentMember={currentMember} onChange={onChange} />
+          <CostAnalysis client={client} priceBook={priceBook} currentMember={currentMember} />
 
           <PriceAnomalies client={client} allClients={allClients} priceBook={priceBook} currentMember={currentMember} />
           <RoomSchedule client={client} onChange={onChange} />
@@ -2766,9 +3463,21 @@ alter publication supabase_realtime add table profiles;`;
         </Field>
         <Field label="نسبة ضريبة القيمة المضافة %">
           <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.vatPct * 100).toFixed(1)}
-            onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })}
+            onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })} />
+        </Field>
+        <Field label="نسبة الربح المتفق عليها مع العميل % — تُحصَّل بعد تسليم كل مرحلة">
+          <input type="number" inputMode="decimal" step="0.5" min="0" className="inp"
+            value={((local.agreedProfitPct || 0) * 100).toFixed(1)}
+            onChange={e => setLocal({ ...local, agreedProfitPct: Number(e.target.value) / 100 })}
             onKeyDown={e => { if (e.key === "Enter") onSave(local); }} />
         </Field>
+        {!(local.agreedProfitPct > 0) && (
+          <div className="-mt-2 mb-3 text-[11px] leading-5" style={{ color: "#8A6D00" }}>
+            بصفر، جدول التحصيل هيعرض قيمة المراحل بدون أي ربح للمكتب. ده رقمك أنت — النظام
+            لا يخترعه، لأن عقدًا مبنيًا على نسبة لم يتفق عليها أحد أسوأ من عقد بلا نسبة.
+            يمكن تجاوز هذه النسبة لكل عميل على حدة من صفحة المقايسة.
+          </div>
+        )}
         <button onClick={() => onSave(local)} className="mt-2 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-navy">
           <Save size={15} /> حفظ الإعدادات
         </button>
@@ -2869,6 +3578,11 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
     onSave(updateBookItem(book, id, { cost }));
   };
 
+  /* تحليل سعر البند: أي بند مفتوح الآن وعند أي مستوى */
+  const [openAnalysis, setOpenAnalysis] = useState(null);   // { id, levelIdx }
+  const patchAnalysis = (id, levelIdx, kind, value) =>
+    onSave(setItemAnalysis(book, id, levelIdx, { [kind]: Number(value) || 0 }));
+
   if (!mayEdit) {
     return <div className="sheet p-6 text-center text-sm text-muted">
       دفتر الأسعار متاح لمدير المشاريع أو مالك المكتب فقط.
@@ -2921,7 +3635,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
               const [, name, unit, , prices, id] = it;
               const entry = (book.items || {})[id] || {};
               const m = itemMargin(book, it, 1, prices[1]);
-              return (
+              return [
                 <tr key={id} className="border-b" style={{ borderColor: "var(--color-line)" }}>
                   <td className="p-2">
                     <span className="block font-semibold leading-4">{name}</span>
@@ -2954,8 +3668,108 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                       <span className="text-[10px] text-muted">—</span>
                     )}
                   </td>
-                </tr>
-              );
+                </tr>,
+                /* ═══ تحليل سعر البند: من أين تتكوّن التكلفة فعلًا ═══ */
+                <tr key={id + "-an"} className="border-b" style={{ borderColor: "var(--color-line)" }}>
+                  <td colSpan={LEVELS.length + 2} className="px-2 pb-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setOpenAnalysis(
+                          openAnalysis?.id === id ? null : { id, levelIdx: openAnalysis?.levelIdx ?? 1 })}
+                        className="rounded px-2 py-0.5 text-[10px] font-bold"
+                        style={{ border: `1px solid ${BORDER}`, color: NAVY }}
+                      >
+                        {openAnalysis?.id === id ? "إخفاء التحليل" : "تحليل السعر"}
+                      </button>
+                      {LEVELS.map((lv, i) => itemAnalysis(book, id, i) && (
+                        <span key={lv} className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                              style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
+                          {lv} محلَّل
+                        </span>
+                      ))}
+                    </div>
+
+                    {openAnalysis?.id === id && (
+                      <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: LIGHT, border: `1px solid ${BORDER}` }}>
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="lbl">تحليل تكلفة {unit} واحد عند مستوى:</span>
+                          {LEVELS.map((lv, i) => (
+                            <button key={lv} onClick={() => setOpenAnalysis({ id, levelIdx: i })}
+                              className="rounded px-2 py-0.5 text-[10px] font-bold"
+                              style={{
+                                backgroundColor: openAnalysis.levelIdx === i ? LEVEL_COLORS[lv] : "#FFFFFF",
+                                color: openAnalysis.levelIdx === i ? "#FFFFFF" : TEXT,
+                                border: `1px solid ${openAnalysis.levelIdx === i ? LEVEL_COLORS[lv] : BORDER}`,
+                              }}>{lv}</button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {COST_KINDS.map(k => {
+                            const cur = itemAnalysis(book, id, openAnalysis.levelIdx) || {};
+                            return (
+                              <div key={k} style={{ minWidth: 96 }}>
+                                <div className="text-[9px] font-bold" style={{ color: KIND_COLOR[k] }}>{KIND_SHORT[k]}</div>
+                                <input type="number" inputMode="decimal" placeholder="0"
+                                  className="num w-full rounded px-1 py-0.5 text-center text-[11px]"
+                                  style={{ border: `1px solid ${BORDER}` }}
+                                  value={cur[k] || ""}
+                                  onChange={e => patchAnalysis(id, openAnalysis.levelIdx, k, e.target.value)} />
+                              </div>
+                            );
+                          })}
+                          <div style={{ minWidth: 110 }}>
+                            <div className="text-[9px] font-bold text-muted">إجمالي التكلفة</div>
+                            <div className="num rounded px-1 py-0.5 text-center text-[11px] font-bold"
+                                 style={{ border: `1px solid ${BORDER}`, backgroundColor: "#FFFFFF" }}>
+                              {fmt(analysisTotal(itemAnalysis(book, id, openAnalysis.levelIdx) || {}))}
+                            </div>
+                          </div>
+                          <div style={{ minWidth: 90 }}>
+                            <div className="text-[9px] font-bold text-muted">سعر البيع</div>
+                            <div className="num rounded px-1 py-0.5 text-center text-[11px] font-bold"
+                                 style={{ border: `1px solid ${BORDER}`, backgroundColor: "#FFFFFF", color: NAVY }}>
+                              {fmt(prices[openAnalysis.levelIdx])}
+                            </div>
+                          </div>
+                        </div>
+                        {(() => {
+                          const an = itemAnalysis(book, id, openAnalysis.levelIdx);
+                          if (!an) return (
+                            <div className="mt-2 text-[10px] text-muted">
+                              أدخل ما تدفعه فعليًا لكل فئة عن {unit} واحد. المجموع يصبح تكلفة البند،
+                              ويُقارَن لاحقًا بمصروفات الموقع بنفس التصنيف.
+                            </div>
+                          );
+                          const shares = analysisShares(an);
+                          const total = analysisTotal(an);
+                          const sell = prices[openAnalysis.levelIdx];
+                          return (
+                            <>
+                              <div className="mt-2 flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E3E7EE" }}>
+                                {COST_KINDS.filter(k => (an[k] || 0) > 0).map(k => (
+                                  <div key={k} title={KIND_LABEL[k]}
+                                       style={{ width: `${shares[k] * 100}%`, backgroundColor: KIND_COLOR[k] }} />
+                                ))}
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-x-3 text-[10px]">
+                                {COST_KINDS.filter(k => (an[k] || 0) > 0).map(k => (
+                                  <span key={k} style={{ color: KIND_COLOR[k] }}>
+                                    {KIND_SHORT[k]} {(shares[k] * 100).toFixed(0)}%
+                                  </span>
+                                ))}
+                                <span className="font-bold" style={{ color: sell > total ? "#1E7B45" : "#C00000" }}>
+                                  الهامش {sell > 0 ? (((sell - total) / sell) * 100).toFixed(0) : 0}%
+                                  {" "}({fmt(sell - total)} ج.م لكل {unit})
+                                </span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </td>
+                </tr>,
+              ];
             })}
           </tbody>
         </table>

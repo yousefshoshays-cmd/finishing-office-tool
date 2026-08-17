@@ -2,7 +2,8 @@ import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Width
 import { saveAs } from "file-saver";
 import { fmt, SPECS } from "../domain/catalogue.js";
 import { LEVELS, SCOPES } from "../ui/tokens.js";
-import { PAYMENT_STAGES } from "../domain/finance.js";
+import { PAYMENT_STAGES, phasePaymentPlan } from "../domain/finance.js";
+import { calcByPhase } from "../domain/pricing.js";
 export { PAYMENT_STAGES };
 
 
@@ -59,18 +60,53 @@ export function generateContractDocx(client, calc, settings = {}) {
   children.push(docH1("أولاً: نطاق العمل"));
   children.push(docBody(`يلتزم المكتب بتنفيذ أعمال التصميم والتشطيب لشقة العميل بمساحة تقريبية ${client.area} م²، وفقاً للمقايسة التفصيلية المعتمدة والموقعة من الطرفين والمرفقة بهذا العقد.`));
 
-  children.push(docH1("ثانياً: قيمة العقد"));
-  children.push(docBody(`القيمة الإجمالية لهذا العقد شاملة الضريبة: ${fmt(calc.grandTotal)} جنيهاً مصرياً.`, { bold: true }));
+  /* جدول الدفعات يُبنى من المراحل الخمس لا من نسب ثابتة: العقد الموقّع
+     يجب أن يطابق حرفيًا ما يتابعه المكتب داخل الأداة، وإلا صار للمشروع
+     جدولان — واحد في الورق وواحد في النظام. */
+  const plan = phasePaymentPlan(client, settings, calcByPhase(client, settings));
 
-  children.push(docH1("ثالثاً: جدول الدفعات"));
-  const w = [Math.round(CONTENT_W * 0.08), Math.round(CONTENT_W * 0.50), Math.round(CONTENT_W * 0.14), 0];
+  children.push(docH1("ثانياً: قيمة العقد"));
+  children.push(docBody(`قيمة الأعمال وفقاً للمقايسة التفصيلية شاملة الضريبة: ${fmt(plan.quoteTotal)} جنيهاً مصرياً.`));
+  if (plan.profitTotal > 0) {
+    children.push(docBody(`نسبة أرباح المكتب المتفق عليها ${(plan.pct * 100).toFixed(1)}% من قيمة أعمال كل مرحلة: ${fmt(plan.profitTotal)} جنيهاً مصرياً.`));
+  }
+  children.push(docBody(`إجمالي قيمة هذا العقد: ${fmt(plan.contractTotal)} جنيهاً مصرياً.`, { bold: true }));
+
+  children.push(docH1("ثالثاً: جدول الدفعات بمراحل التنفيذ"));
+  children.push(docBody("يُنفَّذ المشروع على مراحل متتابعة. تُسدَّد قيمة أعمال كل مرحلة كاملةً قبل البدء في تنفيذها، وتُسدَّد نسبة أرباح المكتب عنها بعد تسليم المرحلة ومعاينتها وقبولها من العميل.", { italics: true, color: "6B7280" }));
+
+  const w = [Math.round(CONTENT_W * 0.07), Math.round(CONTENT_W * 0.45), Math.round(CONTENT_W * 0.26), 0];
   w[3] = CONTENT_W - w[0] - w[1] - w[2];
-  const payRows = PAYMENT_STAGES.map((p, i) => new TableRow({ children: [
-    docCell(String(i + 1), w[0], { align: AlignmentType.CENTER, bold: true, fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-    docCell(p.label, w[1], { fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-    docCell((p.pct * 100).toFixed(0) + "%", w[2], { align: AlignmentType.CENTER, bold: true, fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
-    docCell(fmt(calc.grandTotal * p.pct) + " ج.م", w[3], { align: AlignmentType.CENTER, fill: i % 2 ? "FFFFFF" : "F5F7FA" }),
+
+  const payRows = [];
+  let n = 0;
+  for (const row of plan.rows) {
+    if (row.empty) continue;
+    const shade = () => (n % 2 ? "FFFFFF" : "F5F7FA");
+    n++;
+    payRows.push(new TableRow({ children: [
+      docCell(String(n), w[0], { align: AlignmentType.CENTER, bold: true, fill: shade() }),
+      docCell(`المرحلة ${row.order} — ${row.phase}`, w[1], { fill: shade(), bold: true }),
+      docCell("قبل البدء في تنفيذ المرحلة", w[2], { align: AlignmentType.CENTER, fill: shade() }),
+      docCell(fmt(row.quote) + " ج.م", w[3], { align: AlignmentType.CENTER, bold: true, fill: shade() }),
+    ]}));
+    if (row.profitDue > 0.5) {
+      n++;
+      payRows.push(new TableRow({ children: [
+        docCell(String(n), w[0], { align: AlignmentType.CENTER, bold: true, fill: shade() }),
+        docCell(`أرباح المكتب عن المرحلة ${row.order} (${(plan.pct * 100).toFixed(1)}%)`, w[1], { fill: shade() }),
+        docCell("بعد تسليم المرحلة وقبولها", w[2], { align: AlignmentType.CENTER, fill: shade() }),
+        docCell(fmt(row.profitDue) + " ج.م", w[3], { align: AlignmentType.CENTER, fill: shade() }),
+      ]}));
+    }
+  }
+  payRows.push(new TableRow({ children: [
+    docCell("", w[0], { fill: "BF9000" }),
+    docCell("إجمالي قيمة العقد", w[1], { fill: "BF9000", bold: true, color: "FFFFFF" }),
+    docCell("", w[2], { fill: "BF9000" }),
+    docCell(fmt(plan.contractTotal) + " ج.م", w[3], { align: AlignmentType.CENTER, bold: true, color: "FFFFFF", fill: "BF9000" }),
   ]}));
+
   children.push(new Table({
     width: { size: CONTENT_W, type: WidthType.DXA },
     columnWidths: w,
@@ -78,15 +114,15 @@ export function generateContractDocx(client, calc, settings = {}) {
     rows: [
       new TableRow({ tableHeader: true, children: [
         docCell("م", w[0], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
-        docCell("المرحلة", w[1], { fill: "1F4E78", bold: true, color: "FFFFFF" }),
-        docCell("النسبة", w[2], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
+        docCell("البيان", w[1], { fill: "1F4E78", bold: true, color: "FFFFFF" }),
+        docCell("توقيت الاستحقاق", w[2], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
         docCell("القيمة", w[3], { fill: "1F4E78", bold: true, color: "FFFFFF", align: AlignmentType.CENTER }),
       ]}),
       ...payRows,
     ],
   }));
   children.push(new Paragraph({ spacing: { before: 150 }, children: [] }));
-  children.push(docBody("تُسدد كل دفعة خلال مدة أقصاها 3 أيام عمل من تاريخ إخطار العميل باكتمال المرحلة المرتبطة بها.", { italics: true, color: "6B7280" }));
+  children.push(docBody("لا يبدأ المكتب في تنفيذ أي مرحلة قبل سداد كامل قيمة أعمالها. وتُسدَّد أرباح المرحلة خلال مدة أقصاها 3 أيام عمل من تاريخ محضر التسليم والقبول الخاص بها.", { italics: true, color: "6B7280" }));
 
   children.push(docH1("رابعاً: مدة التنفيذ"));
   children.push(docBody(`مدة التنفيذ الإجمالية ${client.durationDays || "......"} يوم عمل من تاريخ استلام الموقع وتحصيل الدفعة المقدمة.`));

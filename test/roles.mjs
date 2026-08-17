@@ -113,6 +113,45 @@ check("خامل طويلًا",
   "خامل 40 يومًا");
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  حارس ضد تسريب البيانات بين المكاتب
+//  يفحص ملفات الهجرة نفسها: أي سياسة على جدول حسّاس لا تذكر my_org()
+//  هي باب مفتوح. هذا العطل حدث فعلًا مرة، ولن يمرّ ثانية.
+// ═══════════════════════════════════════════════════════════════════════════
+import { readFileSync, readdirSync } from "fs";
+
+section("حارس العزل بين المكاتب");
+
+/* الملف مُسمّى صراحة لا "آخر ملف أبجديًا": إضافة هجرة 010 لأي ميزة
+   كانت ستجعلها هي "الأخيرة" فيفشل هذا الحارس وهو سليم، أو الأسوأ —
+   ينجح على ملف لا علاقة له بالسياسات فيعطي طمأنينة كاذبة. */
+const migDir = "migrations/";
+const AUTHORITATIVE = "ALL_IN_ONE.sql";
+const files = readdirSync(migDir).filter(f => f.endsWith(".sql"));
+check("ملف الهجرة المرجعي موجود", files.includes(AUTHORITATIVE), true);
+const finalSql = readFileSync(migDir + AUTHORITATIVE, "utf8");
+
+check("آخر هجرة تمسح كل السياسات القديمة ديناميكيًا",
+  /drop policy if exists %I/.test(finalSql) && /pg_policies/.test(finalSql), true);
+check("آخر هجرة تعيد بناء سياسة kv مقيّدة بالمكتب",
+  /kv_read_own_org[\s\S]*my_org\(\)/.test(finalSql), true);
+check("الكتابة في kv تتطلب ترخيصًا ساريًا",
+  /kv_write_own_org[\s\S]*org_can_write\(\)/.test(finalSql), true);
+check("عمود org_id في kv إلزامي",
+  /alter table kv\s+alter column org_id set not null/.test(finalSql), true);
+check("الصور معزولة بمجلد المكتب",
+  /photos_read_own_org[\s\S]*foldername/.test(finalSql), true);
+check("توجد دالة فحص تسريب", /function public\.leak_check/.test(finalSql), true);
+
+const app = readFileSync("src/App.jsx", "utf8");
+check("تسجيل الخروج يمسح ذاكرة المكتب", /clearOrgCache\(\)/.test(app), true);
+check("تسجيل الخروج يفرّغ قائمة العملاء", /clearOrgCache\(\)[\s\S]{0,200}setClients\(\[\]\)/.test(app), true);
+
+const photos = readFileSync("src/data/photos.js", "utf8");
+check("مسار الصور يبدأ بمعرّف المكتب", /\$\{orgId\}\/\$\{clientId\}/.test(photos), true);
+
 console.log(results.join("\n"));
 console.log("\n" + "─".repeat(60));
 console.log(`نجح ${pass} · فشل ${fail}`);

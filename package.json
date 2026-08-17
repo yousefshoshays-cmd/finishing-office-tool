@@ -10,7 +10,8 @@
     "test": "esbuild test/smoke.mjs --bundle --platform=node --outfile=/tmp/_s.cjs --format=cjs && node /tmp/_s.cjs",
     "test:roles": "esbuild test/roles.mjs --bundle --platform=node --outfile=/tmp/_r.cjs --format=cjs && node /tmp/_r.cjs",
     "test:ui": "esbuild test/render.mjs --bundle --platform=node --loader:.mjs=jsx --outfile=/tmp/_u.cjs --format=cjs && node /tmp/_u.cjs",
-    "test:all": "npm run test && npm run test:roles && npm run test:ui"
+    "test:excel": "esbuild test/excel.mjs --bundle --platform=node --outfile=/tmp/_x.cjs --format=cjs && node /tmp/_x.cjs",
+    "test:all": "npm run test && npm run test:roles && npm run test:ui && npm run test:excel"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

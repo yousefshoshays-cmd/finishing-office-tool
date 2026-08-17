@@ -1,5 +1,14 @@
-import { ITEMS, SPECS, DEFAULT_SETTINGS } from "./catalogue.js";
-import { LEVELS, SCOPES, STAGES } from "../ui/tokens.js";
+import { ITEMS, SPECS, DEFAULT_SETTINGS, phaseOf } from "./catalogue.js";
+import { LEVELS, SCOPES, STAGES, PHASES } from "../ui/tokens.js";
+
+/* النطاقات التي تحمل أتعاب الإشراف والاحتياطي. التصميم والفرش خارجها:
+   الأول أتعاب أصلًا، والثاني توريد لا إشراف عليه. */
+export const EXEC_SCOPES = [
+  "تعديلات معمارية (هدم وبناء)",
+  "التشطيبات المعمارية والتنفيذ",
+  "الكهرباء",
+  "السباكة والتكييف",
+];
 
 
 export function newClient() {
@@ -85,6 +94,7 @@ export function resolveItem(client, item, area) {
 
   return {
     id, scope, name, unit, included, level, levelIdx, qty, price, basePrice,
+    phase: phaseOf(id, scope),
     total: included ? qty * price : 0,
     hasQtyOverride, hasPriceOverride, isCustomLevel: !!rec.level,
     priceDate: rec.priceDate || "",
@@ -102,8 +112,7 @@ export function calcClient(client, settings) {
     const r = resolveItem(client, item, area);
     byScope[r.scope] += r.total;
   });
-  const execScopes = ["تعديلات معمارية (هدم وبناء)", "التشطيبات المعمارية والتنفيذ", "الكهرباء", "السباكة والتكييف"];
-  const execTotal = execScopes.reduce((sum, s) => sum + byScope[s], 0);
+  const execTotal = EXEC_SCOPES.reduce((sum, s) => sum + byScope[s], 0);
   const supervision = execTotal * settings.supervisionPct;
   const contingency = (execTotal + supervision) * settings.contingencyPct;
   const execWithExtras = execTotal + supervision + contingency;
@@ -111,6 +120,44 @@ export function calcClient(client, settings) {
   const vat = subtotal * settings.vatPct;
   const grandTotal = subtotal + vat;
   return { byScope, execTotal, supervision, contingency, execWithExtras, subtotal, vat, grandTotal };
+}
+
+/* ═══════════════════ المقايسة موزّعة على المراحل الخمس ═══════════════════
+   نفس أرقام calcClient بالضبط، لكن مقسّمة على مراحل التنفيذ بدل النطاقات.
+
+   الإشراف والاحتياطي والضريبة لا تُقسَّم بالتساوي ولا بالتناسب التقريبي —
+   تُحسب لكل مرحلة من بنودها هي. وبما أن الثلاثة دوال خطّية في قيمة بنود
+   التنفيذ، فمجموع المراحل يساوي الإجمالي العام بالجنيه لا بالتقريب.
+   (اختبار في test/business.mjs يثبت هذه المساواة ولا يسمح بانحرافها.) */
+export function calcByPhase(client, settings, items = ITEMS) {
+  const area = Number(client.area) || 0;
+  const rows = items.map(it => resolveItem(client, it, area));
+
+  const phases = PHASES.map(phase => {
+    const lines = rows.filter(r => r.phase === phase);
+    const included = lines.filter(r => r.included);
+    const base = included.reduce((s, r) => s + r.total, 0);
+    const execPortion = included
+      .filter(r => EXEC_SCOPES.includes(r.scope))
+      .reduce((s, r) => s + r.total, 0);
+    const supervision = execPortion * settings.supervisionPct;
+    const contingency = (execPortion + supervision) * settings.contingencyPct;
+    const net = base + supervision + contingency;      // قبل الضريبة
+    const vat = net * settings.vatPct;
+    return {
+      phase, lines, base, execPortion, supervision, contingency, net, vat,
+      quote: net + vat,                                 // ما يُقدَّم للعميل عن هذه المرحلة
+      itemCount: included.length,
+      empty: included.length === 0,
+    };
+  });
+
+  return {
+    phases,
+    grandTotal: phases.reduce((s, p) => s + p.quote, 0),
+    net: phases.reduce((s, p) => s + p.net, 0),
+    vat: phases.reduce((s, p) => s + p.vat, 0),
+  };
 }
 
 /* ============================= تجميد المقايسة عند التعاقد =============================

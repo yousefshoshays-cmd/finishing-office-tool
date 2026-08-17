@@ -1,4 +1,4 @@
-import { getSupabase, isCloudMode, withTimeout } from "./storage.js";
+import { getSupabase, isCloudMode, withTimeout, getOrgId } from "./storage.js";
 
 /* ════════════════════════════════════════════════════════════════
    صور الموقع
@@ -49,10 +49,16 @@ export function compressImage(file, { maxEdge = MAX_EDGE, quality = JPEG_QUALITY
 /* ---------- المسارات ---------- */
 /* clients/<clientId>/<visitId>/<timestamp>.jpg — الحذف المتتالي للعميل سهل */
 
-export function photoPath(clientId, visitId, name = "") {
+export function photoPath(orgId, clientId, visitId, name = "") {
   const stamp = Date.now().toString(36);
   const safe = String(name).replace(/[^\w.-]+/g, "_").slice(-40) || "photo";
-  return `clients/${clientId}/${visitId}/${stamp}_${safe}.jpg`;
+  return `${orgId}/${clientId}/${visitId}/${stamp}_${safe}.jpg`;
+}
+
+/* جذر مجلد المكتب. سياسة التخزين تتحقّق من أن أول جزء في المسار
+   يساوي معرّف مكتب المستخدم، فلا يمكن قراءة صور مكتب آخر إطلاقًا. */
+function orgFolder(orgId, clientId, visitId) {
+  return `${orgId}/${clientId}/${visitId}`;
 }
 
 /* ---------- العمليات ---------- */
@@ -68,11 +74,13 @@ export function photosAvailable() {
 }
 
 export async function uploadPhoto(clientId, visitId, file) {
+  const orgId = await getOrgId();
+  if (!orgId) throw new Error("تعذّر تحديد المكتب — أعد تسجيل الدخول");
   if (!photosAvailable()) throw new Error("رفع الصور يحتاج تفعيل المزامنة السحابية");
   if (file.size > MAX_UPLOAD_BYTES) throw new Error("حجم الصورة أكبر من 8 ميجابايت");
 
   const { blob, width, height } = await compressImage(file);
-  const path = photoPath(clientId, visitId, file.name);
+  const path = photoPath(orgId, clientId, visitId, file.name);
 
   const { error } = await withTimeout(
     bucket().upload(path, blob, { contentType: "image/jpeg", upsert: false }),
@@ -91,11 +99,14 @@ export async function uploadPhoto(clientId, visitId, file) {
 
 export async function listPhotos(clientId, visitId) {
   if (!photosAvailable()) return [];
+  const orgId = await getOrgId();
+  if (!orgId) return [];
+  const folder = orgFolder(orgId, clientId, visitId);
   const { data, error } = await withTimeout(
-    bucket().list(`clients/${clientId}/${visitId}`, { limit: 100, sortBy: { column: "name", order: "desc" } })
+    bucket().list(folder, { limit: 100, sortBy: { column: "name", order: "desc" } })
   );
   if (error || !data) return [];
-  return data.map(f => ({ path: `clients/${clientId}/${visitId}/${f.name}`, name: f.name }));
+  return data.map(f => ({ path: `${folder}/${f.name}`, name: f.name }));
 }
 
 export async function deletePhoto(path) {

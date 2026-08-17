@@ -150,6 +150,125 @@ check("قبل تحميل الترخيص: لا نعطّل المستخدم",
   canSave({ loaded: false, canWrite: false }));
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  المقايسة والتحصيل بالمراحل — المكوّنات الحقيقية من التطبيق نفسه
+//  تُستورد ولا تُعاد كتابتها: اختبار ينسخ منطق التطبيق يشهد لنفسه لا عليه.
+// ═══════════════════════════════════════════════════════════════════════════
+import { PhaseBOQ, PhaseCollection, PhaseSpend, CostAnalysis, ContractorLedger } from "../src/App.jsx";
+import * as pb from "../src/domain/pricebook.js";
+import { newClient, calcByPhase } from "../src/domain/pricing.js";
+import { DEFAULT_SETTINGS, fmt } from "../src/domain/catalogue.js";
+import { PHASES } from "../src/ui/tokens.js";
+import { phasePaymentPlan } from "../src/domain/finance.js";
+
+section("المقايسة بالمراحل — عرض حقيقي");
+{
+  const S = { ...DEFAULT_SETTINGS, agreedProfitPct: 0.12 };
+  const owner = { role: "owner", name: "المالك" };
+  const c = newClient(); c.name = "عميل"; c.area = 150;
+
+  const html = render(<PhaseBOQ client={c} settings={S} currentMember={owner} onChange={() => {}} />);
+  check("لا ينهار", !crashed(html));
+  for (const p of PHASES) check(`يعرض مرحلة: ${p}`, shows(html, p));
+  check("يعرض عمود ما قبل البدء", shows(html, "قبل البدء"));
+  check("يعرض عمود ما بعد التسليم", shows(html, "بعد التسليم"));
+
+  /* SummaryRow يُنسّق الرقم بنفسه — تمرير نص منسّق مسبقًا كان يُخرج "NaN ج.م".
+     هذا الفحص يمنع عودة ذلك الخلل في أي سطر إجمالي. */
+  const plan = phasePaymentPlan(c, S, calcByPhase(c, S));
+  check(`قيمة التعاقد الظاهرة = ${fmt(plan.contractTotal)}`, shows(html, fmt(plan.contractTotal)));
+  check("لا NaN في أي رقم معروض", !shows(html, "NaN"));
+
+  // بلا نسبة ربح: تحذير صريح لا صفر صامت
+  const bare = render(<PhaseBOQ client={c} settings={DEFAULT_SETTINGS} currentMember={owner} onChange={() => {}} />);
+  check("بلا نسبة ربح: تحذير ظاهر", shows(bare, "لم تُحدَّد نسبة الربح"));
+
+  // المهندس لا يعدّل النسبة
+  const eng = render(<PhaseBOQ client={c} settings={S} currentMember={{ role: "engineer" }} onChange={() => {}} />);
+  check("المهندس: حقل النسبة معطّل", !crashed(eng) && shows(eng, "disabled"));
+}
+
+section("جدول التحصيل — منع البدء قبل التحصيل");
+{
+  const S = { ...DEFAULT_SETTINGS, agreedProfitPct: 0.12 };
+  const owner = { role: "owner", name: "المالك" };
+  const c = newClient(); c.name = "عميل"; c.area = 150;
+  const plan = phasePaymentPlan(c, S, calcByPhase(c, S));
+  const first = plan.rows[0];
+
+  const before = render(<PhaseCollection client={c} settings={S} currentMember={owner} onChange={() => {}} />);
+  check("لا ينهار", !crashed(before));
+  check("يمنع البدء قبل التحصيل", shows(before, "لا تبدأ التنفيذ"));
+  check("يعرض زر تعليم التسليم", shows(before, "تعليم المرحلة مُسلَّمة"));
+  check("الربح غير مستحق قبل التسليم", shows(before, "غير مستحقة — المرحلة لم تُسلَّم"));
+
+  c.receipts = [{ id: "R1", amount: first.quote, phase: first.phase, kind: "base" }];
+  const paid = render(<PhaseCollection client={c} settings={S} currentMember={owner} onChange={() => {}} />);
+  check("بعد التحصيل: مسموح بالبدء", shows(paid, "مسموح بالبدء"));
+
+  c.phaseDelivered = { [first.phase]: "2026-08-16" };
+  const done = render(<PhaseCollection client={c} settings={S} currentMember={owner} onChange={() => {}} />);
+  check("بعد التسليم: الربح مستحق", shows(done, "سُلّمت — نسبة الربح مستحقة"));
+
+  // دفعة قديمة بلا مرحلة تُعلَن صراحة
+  const c2 = newClient(); c2.area = 150;
+  c2.receipts = [{ id: "OLD", amount: 50000 }];
+  const old = render(<PhaseCollection client={c2} settings={S} currentMember={owner} onChange={() => {}} />);
+  check("دفعة قديمة: تنبيه بعدم النسبة لمرحلة", shows(old, "غير منسوبة لأي مرحلة"));
+}
+
+section("مصروفات الموقع مصنّفة — عرض حقيقي");
+{
+  const S = { ...DEFAULT_SETTINGS, agreedProfitPct: 0.12 };
+  const c = newClient(); c.area = 150;
+  c.expenses = [{ id: "E1", amount: 300000, phase: "التأسيس", kind: "materials", date: "2026-08-01" }];
+  const html = render(<PhaseSpend client={c} settings={S} priceBook={pb.DEFAULT_PRICEBOOK} onChange={() => {}} />);
+  check("لا ينهار", !crashed(html));
+  check("يرصد التجاوز", shows(html, "تجاوز"));
+  check("يعرض سجل مصروفات الموقع", shows(html, "سجل مصروفات الموقع"));
+  check("يعرض فئات التكلفة في السجل", shows(html, "خامات وتوريدات") && shows(html, "معدات وأوناش"));
+  const clean = render(<PhaseSpend client={newClient()} settings={S} priceBook={pb.DEFAULT_PRICEBOOK} onChange={() => {}} />);
+  check("بلا مصروفات: لا ينهار ولا يعرض سجلًا", !crashed(clean) && !shows(clean, "سجل مصروفات الموقع"));
+  check("لا NaN في مصروفات الموقع", !shows(html, "NaN"));
+}
+
+section("تحليل التكلفة وحسابات المقاولين — عرض حقيقي");
+{
+  const owner = { role: "owner", name: "المالك" };
+  const c = newClient(); c.area = 150;
+  let book = pb.DEFAULT_PRICEBOOK;
+  book = pb.setItemAnalysis(book, "PLS-001", 1, { materials: 45, labour: 60, equipment: 5 });
+
+  const html = render(<CostAnalysis client={c} priceBook={book} currentMember={owner} />);
+  check("تحليل التكلفة لا ينهار", !crashed(html));
+  check("يعرض الفئات المحلَّلة", shows(html, "خامات") && shows(html, "عمالة"));
+  check("يعلن نسبة التغطية بدل ادّعاء الاكتمال", shows(html, "التحليل يغطي"));
+
+  const eng = render(<CostAnalysis client={c} priceBook={book} currentMember={{ role: "engineer" }} />);
+  check("المهندس لا يرى تحليل التكلفة إطلاقًا", eng === "");
+
+  const bare = render(<CostAnalysis client={c} priceBook={pb.DEFAULT_PRICEBOOK} currentMember={owner} />);
+  check("بلا تحليل: يقول ذلك صراحة", shows(bare, "لا يوجد بند محلَّل بعد"));
+
+  const c2 = newClient(); c2.area = 150;
+  c2.contractors = [{ id: "SUB-001", name: "م. سامي", trade: "كهرباء", phase: "التأسيس", contractValue: 25000, retentionPct: 0.05 }];
+  c2.expenses = [{ id: "E1", kind: "subcontract", phase: "التأسيس", contractorId: "SUB-001", amount: 14250, retained: 750 }];
+  const led = render(<ContractorLedger client={c2} onChange={() => {}} />);
+  check("سجل المقاولين لا ينهار", !crashed(led));
+  check("يعرض المحتجز والمتبقي", shows(led, "محتجز") && shows(led, "متبقٍ"));
+  check("لا NaN في سجل المقاولين", !shows(led, "NaN"));
+
+  // تجاوز قيمة التعاقد يجب أن يُرصد بوضوح
+  const c3 = { ...c2, expenses: [{ id: "E1", kind: "subcontract", phase: "التأسيس", contractorId: "SUB-001", amount: 40000 }] };
+  const over = render(<ContractorLedger client={c3} onChange={() => {}} />);
+  check("تجاوز تعاقد المقاول يُرصد", shows(over, "تجاوز قيمة التعاقد"));
+
+  const orphan = { ...c2, expenses: [{ id: "E9", kind: "subcontract", phase: "التأسيس", amount: 5000 }] };
+  const orph = render(<ContractorLedger client={orphan} onChange={() => {}} />);
+  check("مصروف مقاول بلا مقاول يُعلَن", shows(orph, "غير منسوبة لمقاول"));
+}
+
 console.log(out.join("\n"));
 console.log("\n" + "─".repeat(60));
 console.log(`نجح ${pass} · فشل ${fail}`);
