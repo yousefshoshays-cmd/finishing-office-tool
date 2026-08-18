@@ -5,11 +5,11 @@ import {
   PAYMENT_METHODS, bestValuePlan, planSaving, statusLabel,
 } from "../data/billing.js";
 
-const NAVY = "#1F4E78";
+const NAVY = "#A8553A";
 const BORDER = "#E2E8F0";
 const TEXT = "#0F172A";
 const MUTED = "#64748B";
-const GOLD = "#BF9000";
+const GOLD = "#B08A3E";
 
 /* بيانات التحصيل — عدّلها مرة واحدة هنا وتظهر في كل مكان.
    وُضعت في ملف الواجهة لا في قاعدة البيانات كي تعدّلها دون SQL. */
@@ -116,7 +116,7 @@ export default function BillingPanel({ license, onToast, onError }) {
 
       {!isOwner && (
         <div className="mt-4 flex items-start gap-2 rounded-lg p-3 text-xs leading-5"
-             style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+             style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           <AlertCircle size={14} className="mt-0.5 shrink-0" />
           مالك المكتب وحده يستطيع إدارة الاشتراك. تواصل معه لتجديد الاشتراك.
         </div>
@@ -250,7 +250,7 @@ export default function BillingPanel({ license, onToast, onError }) {
                   {Number(h.amount_egp).toLocaleString("ar-EG")} ج.م · {h.reference || "بلا مرجع"}
                 </span>
                 <span className="font-bold" style={{
-                  color: h.status === "approved" ? "#047857" : h.status === "rejected" ? "#B42318" : "#8A6D00",
+                  color: h.status === "approved" ? "#047857" : h.status === "rejected" ? "#A8322B" : "#7A5E22",
                 }}>
                   {statusLabel(h.status)}
                 </span>

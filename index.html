@@ -3,28 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#A8553A" />
+  <meta name="theme-color" content="#14110F" />
   <meta name="description" content="نظام متابعة العملاء وتسعير أعمال التشطيبات — مقايسة تفصيلية، عقود، ودفعات." />
   <title>نظام متابعة العملاء والتسعير — مكتب الاستشارات المعمارية</title>
   <link rel="icon" href="data:,">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- الخط مستضاف داخل الموقع: لا Google Fonts ولا أي رابط خارجي -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="./fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="./fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2">
   <link rel="stylesheet" href="./styles.css" />
   <style>
     html, body, #root { min-height: 100%; }
-    body { margin: 0; background: #F4F1EC; font-family: 'Cairo', Arial, sans-serif; }
+    body { margin: 0; background: #FFFFFF; color: #14110F;
+           font-family: "Plex Arabic", "IBM Plex Sans Arabic", -apple-system, Segoe UI, Arial, sans-serif; }
   </style>
+  <script>
+    /* اللغة المحفوظة تُطبَّق قبل أول رسم، فلا ترتد الصفحة من اتجاه لآخر */
+    try {
+      var l = localStorage.getItem("boq_lang");
+      if (l === "en") { document.documentElement.lang = "en"; document.documentElement.dir = "ltr"; }
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <div id="root">
-    <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:'Cairo',Arial,sans-serif;color:#6B7280;">
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#83807A;font-size:12px;letter-spacing:.14em;text-transform:uppercase;">
       جاري التحميل…
     </div>
   </div>
   <script type="module" src="./assets/main.js"></script>
   <noscript>
-    <div style="padding:2rem;text-align:center;font-family:Cairo,Arial,sans-serif">
+    <div style="padding:2rem;text-align:center">
       يحتاج هذا التطبيق إلى تفعيل JavaScript في المتصفح.
     </div>
   </noscript>

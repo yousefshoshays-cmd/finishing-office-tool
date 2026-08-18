@@ -3,15 +3,15 @@ import { Loader2, AlertCircle, RefreshCw, Search } from "lucide-react";
 import { listOrgs, summary, setLicense, setSeats, renameOrg, orgHealth, activityNote } from "../data/admin.js";
 import { pendingPayments, reviewPayment } from "../data/billing.js";
 
-const NAVY = "#1F4E78";
+const NAVY = "#A8553A";
 const BORDER = "#E2E8F0";
 const TEXT = "#0F172A";
 const MUTED = "#64748B";
 
 const TONES = {
   ok:     { bg: "#ECFDF5", fg: "#047857" },
-  warn:   { bg: "#FFF7E6", fg: "#8A6D00" },
-  danger: { bg: "#FEF2F2", fg: "#B42318" },
+  warn:   { bg: "#FAF3E4", fg: "#7A5E22" },
+  danger: { bg: "#FEF2F2", fg: "#A8322B" },
 };
 
 function Stat({ label, value, tone }) {
@@ -118,7 +118,7 @@ export default function AdminPanel({ onToast, onError }) {
 
       {stats?.expiringSoon > 0 && (
         <div className="mt-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-5"
-             style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+             style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           <AlertCircle size={14} className="mt-0.5 shrink-0" />
           <span>
             {stats.expiringSoon} مكتب على وشك الانتهاء. هذه أفضل لحظة للاتصال —
@@ -166,7 +166,7 @@ export default function AdminPanel({ onToast, onError }) {
                       catch (e) { onError?.(e.message); }
                     }}
                     className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold"
-                    style={{ border: `1px solid ${BORDER}`, color: "#B42318" }}>
+                    style={{ border: `1px solid ${BORDER}`, color: "#A8322B" }}>
                     رفض
                   </button>
                 </div>
@@ -241,7 +241,7 @@ export default function AdminPanel({ onToast, onError }) {
 
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: MUTED }}>
                   <span>الأعضاء: {org.members} / {org.seats}</span>
-                  {org.pending > 0 && <span style={{ color: "#8A6D00" }}>بانتظار موافقة: {org.pending}</span>}
+                  {org.pending > 0 && <span style={{ color: "#7A5E22" }}>بانتظار موافقة: {org.pending}</span>}
                   <span>كود الدعوة: <code className="font-bold">{org.inviteCode}</code></span>
                 </div>
 
@@ -253,7 +253,7 @@ export default function AdminPanel({ onToast, onError }) {
                   </button>
                   <button disabled={isBusy} onClick={() => act(org, "activate_year")}
                           className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40"
-                          style={{ backgroundColor: "#FCE9B5", color: "#8A6D00" }}>
+                          style={{ backgroundColor: "#F6EAD6", color: "#7A5E22" }}>
                     تفعيل سنة
                   </button>
                   <button disabled={isBusy} onClick={() => act(org, "extend_trial", 7)}
@@ -290,7 +290,7 @@ export default function AdminPanel({ onToast, onError }) {
                   ) : (
                     <button disabled={isBusy} onClick={() => act(org, "suspend")}
                             className="min-h-[38px] rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40"
-                            style={{ border: `1px solid ${BORDER}`, color: "#B42318" }}>
+                            style={{ border: `1px solid ${BORDER}`, color: "#A8322B" }}>
                       إيقاف
                     </button>
                   )}

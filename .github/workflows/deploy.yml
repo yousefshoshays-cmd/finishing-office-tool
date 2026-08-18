@@ -72,7 +72,9 @@ jobs:
           mkdir -p _site
           cp index.html styles.css _site/
           cp -r assets _site/
+          cp -r fonts  _site/
           test -f _site/assets/main.js
+          test -f _site/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2
           du -sh _site
 
       - uses: actions/upload-pages-artifact@v3

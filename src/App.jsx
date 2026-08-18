@@ -34,6 +34,11 @@ import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, 
 import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
 import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET } from "./data/photos.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
+import {
+  ProjectCover, StagePill, SectionHead, Frame, Meta, MetaGrid,
+  Eyebrow, Rule, LangToggle, CoverUpload,
+} from "./ui/editorial.jsx";
+import { t, useLang, applyDocumentLang, currency } from "./ui/i18n.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS, officeLine } from "./domain/catalogue.js";
 import {
   newClient, resolveItem, calcClient, calcByPhase, migrateClient, progressFromVisits,
@@ -106,16 +111,16 @@ function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger,
   if (!open) return null;
   const ok = !requireText || typed.trim() === String(requireText).trim();
   return (
-    <div dir="rtl" className="fixed inset-0 z-[100] flex items-end justify-center p-3 sm:items-center sm:p-4" style={{ backgroundColor: "rgba(15,23,42,0.55)" }} onClick={onCancel}>
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl p-5 shadow-xl sm:p-6" style={{ backgroundColor: "#FFFFFF", fontFamily: "'Cairo', Arial, sans-serif" }} onClick={e => e.stopPropagation()}>
-        <div className="mb-2 flex items-center gap-2 text-base font-bold" style={{ color: danger ? "#B42318" : NAVY }}>
+    <div className="fixed inset-0 z-[100] flex items-end justify-center p-3 sm:items-center sm:p-4" style={{ backgroundColor: "rgba(15,23,42,0.55)" }} onClick={onCancel}>
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl p-5 shadow-xl sm:p-6" style={{ backgroundColor: "#FFFFFF", fontFamily: "inherit" }} onClick={e => e.stopPropagation()}>
+        <div className="mb-2 flex items-center gap-2 text-base font-bold" style={{ color: danger ? "#A8322B" : NAVY }}>
           <AlertCircle size={18} /> {title}
         </div>
         <div className="mb-4 text-sm leading-relaxed" style={{ color: MUTED }}>{body}</div>
         {requireText && (
           <div className="mb-4">
             <div className="mb-1.5 text-xs font-semibold" style={{ color: TEXT }}>
-              للتأكيد، اكتب: <span className="font-bold" style={{ color: "#B42318" }}>{requireText}</span>
+              للتأكيد، اكتب: <span className="font-bold" style={{ color: "#A8322B" }}>{requireText}</span>
             </div>
             <input
               autoFocus
@@ -132,7 +137,7 @@ function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger,
             disabled={!ok}
             onClick={onConfirm}
             className="flex-1 rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40"
-            style={{ backgroundColor: danger ? "#B42318" : NAVY }}
+            style={{ backgroundColor: danger ? "#A8322B" : NAVY }}
           >
             {confirmLabel}
           </button>
@@ -154,8 +159,8 @@ function LicenseBanner({ license, onUpgrade }) {
   if (!notice) return null;
   const tones = {
     info:  { bg: "#EFF6FF", fg: "#1E40AF" },
-    warn:  { bg: "#FFF7E6", fg: "#8A6D00" },
-    error: { bg: "#FEF2F2", fg: "#B42318" },
+    warn:  { bg: "#FAF3E4", fg: "#7A5E22" },
+    error: { bg: "#FEF2F2", fg: "#A8322B" },
   };
   const t = tones[notice.tone] || tones.info;
   return (
@@ -207,7 +212,7 @@ function TeamInvite({ license }) {
         </span>
       </div>
       {license.membersCount >= license.seats && (
-        <div className="mt-2 text-xs font-semibold" style={{ color: "#8A6D00" }}>
+        <div className="mt-2 text-xs font-semibold" style={{ color: "#7A5E22" }}>
           اكتمل عدد المقاعد — تواصل معنا لزيادتها قبل إضافة عضو جديد.
         </div>
       )}
@@ -303,7 +308,7 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
                     <td className="p-3 text-center text-xs text-muted">{c.engineer || "—"}</td>
                     <td className="p-3 text-center">
                       {c.progressPercent > 0 ? (
-                        <span className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>{c.progressPercent}%</span>
+                        <span className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>{c.progressPercent}%</span>
                       ) : (
                         <span className="text-xs text-muted">—</span>
                       )}
@@ -311,18 +316,18 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
                     <td className="p-3 text-center"><Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} /></td>
                     <td className="p-3 text-center font-bold text-navy">{fmt(calc.grandTotal)} ج.م</td>
                     <td className="p-3 text-center">
-                      <button onClick={() => exportFullBOQ(c, settings, { includeCost: can(currentMember, "viewCostBasis"), priceBook })} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
+                      <button onClick={() => exportFullBOQ(c, settings, { includeCost: can(currentMember, "viewCostBasis"), priceBook })} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>
                         <FileSpreadsheet size={13} /> تحميل
                       </button>
                     </td>
                     <td className="p-3 text-center">
-                      <button onClick={() => buildAndDownloadClientPptx(c, calc, settings)} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#DCE6F5", color: "#2E5395" }}>
+                      <button onClick={() => buildAndDownloadClientPptx(c, calc, settings)} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#DCE6F5", color: "#6B5B7B" }}>
                         <FileText size={13} /> تحميل
                       </button>
                     </td>
                     <td className="p-3 text-center">
                       {contractReady ? (
-                        <button onClick={() => generateContractDocx(c, calc, settings).then(d => downloadDocx(`عقد_${c.name || "عميل"}.docx`, d))} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#FCE9B5", color: "#8A6D00" }}>
+                        <button onClick={() => generateContractDocx(c, calc, settings).then(d => downloadDocx(`عقد_${c.name || "عميل"}.docx`, d))} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#F6EAD6", color: "#7A5E22" }}>
                           <FileText size={13} /> تحميل العقد
                         </button>
                       ) : (
@@ -367,27 +372,21 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
 
 function Badge({ text, color }) {
   return (
-    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: color + "1A", color }}>
-      {text}
+    <span className="inline-flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 500, color: INK }}>
+      <i className="stagedot" style={{ backgroundColor: color }} />
+      {t(text)}
     </span>
   );
 }
 
 function StatCard({ label, value, sub, accent, icon: Icon }) {
   return (
-    <div className="relative overflow-hidden rounded-xl p-4 shadow-sm transition-shadow hover:shadow-md" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-xs font-semibold text-muted">{label}</div>
-          <div className="mt-1 text-2xl font-bold" style={{ color: accent || NAVY }}>{value}</div>
-          {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
-        </div>
-        {Icon && (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: (accent || NAVY) + "1A" }}>
-            <Icon size={18} style={{ color: accent || NAVY }} />
-          </div>
-        )}
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 11, paddingBottom: 4 }}>
+      <span className="eyebrow">{t(label)}</span>
+      <div className="num" style={{ marginTop: 4, fontSize: 26, fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.25, color: accent && accent !== NAVY ? accent : INK }}>
+        {value}
       </div>
+      {sub && <div className="num" style={{ marginTop: 2, fontSize: 11.5, color: MUTED }}>{sub}</div>}
     </div>
   );
 }
@@ -445,14 +444,14 @@ function MonthlyTrendChart({ clients, settings }) {
         const pct = val > 0 ? Math.max((val / maxVal) * 78, 2) : 0;
         return (
           <div key={m.key} className="flex flex-1 flex-col items-center justify-end gap-1" style={{ height: "100%" }}>
-            <span className="text-[10px] font-bold tabular-nums text-navy" style={{ minHeight: 14 }}>
+            <span className="num" style={{ minHeight: 14, fontSize: 10.5, color: MUTED }}>
               {val > 0 ? label(val) : ""}
             </span>
             <div
-              className="w-full rounded-t transition-all"
-              style={{ height: `${pct}%`, maxWidth: 44, backgroundColor: val > 0 ? GOLD : "transparent" }}
+              className="w-full transition-all"
+              style={{ height: `${pct}%`, maxWidth: 46, backgroundColor: val > 0 ? INK : "transparent" }}
             />
-            <span className="text-[11px] font-semibold text-muted">{m.label}</span>
+            <span style={{ fontSize: 10.5, color: MUTED }}>{m.label}</span>
           </div>
         );
       })}
@@ -485,6 +484,28 @@ function AppInner() {
   const [priceBook, setPriceBook] = useState(DEFAULT_PRICEBOOK);
   const [tab, setTab] = useState("dashboard");
   const [section, setSection] = useState("office");   // office | clients | contractors
+
+  /* ═══ اللغة ═══
+     الاختيار محفوظ محليًا ويُطبَّق على عنصر <html> نفسه، فينقلب اتجاه
+     الصفحة كاملًا بلا شرط في كل شاشة. الخطّاف هنا ليعيد تصيير الشجرة
+     عند التبديل — موضعه قبل أي return مبكّر التزامًا بقواعد الخطّافات. */
+  const lang = useLang();
+  useEffect(() => { applyDocumentLang(); }, [lang]);
+
+  /* روابط أغلفة المشاريع — موقّتة لأن مساحة الصور خاصة.
+     غيابها لا يعطّل شيئًا: المشروع بلا صورة يعرض واجهة معمارية مولَّدة. */
+  const [coverUrls, setCoverUrls] = useState({});
+
+  /* تحميل روابط الأغلفة عند توفّر المزامنة. الفشل صامت عمدًا:
+     غلاف ناقص يجب ألّا يمنع المكتب من العمل. */
+  useEffect(() => {
+    let alive = true;
+    const paths = clients.map(c => c.coverPath || c.lastPhotoPath).filter(Boolean);
+    if (!paths.length || !photosAvailable()) { setCoverUrls({}); return; }
+    signedUrls([...new Set(paths)]).then(u => { if (alive) setCoverUrls(u); }).catch(() => {});
+    return () => { alive = false; };
+  }, [clients]);
+
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -842,7 +863,7 @@ function AppInner() {
 
   if (loading) {
     return (
-      <div dir="rtl" className="flex h-[600px] items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif" }}>
+      <div className="flex h-[600px] items-center justify-center" style={{ fontFamily: "inherit" }}>
         <div className="flex flex-col items-center gap-3 text-muted">
           <Loader2 className="animate-spin" size={28} />
           <div className="text-sm">جاري تحميل بيانات العملاء…</div>
@@ -853,9 +874,9 @@ function AppInner() {
 
   if (connectionError) {
     return (
-      <div dir="rtl" className="flex min-h-[700px] items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
+      <div className="flex min-h-[700px] items-center justify-center" style={{ backgroundColor: LIGHT }}>
         <div className="w-full max-w-md rounded-2xl p-8 text-center shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-2 text-lg font-bold" style={{ color: "#C00000" }}>تعذر الاتصال بالخادم السحابي</div>
+          <div className="mb-2 text-lg font-bold" style={{ color: "#A8322B" }}>تعذر الاتصال بالخادم السحابي</div>
           <p className="mb-3 text-sm leading-6 text-muted">
             تأكد من صحة رابط ومفتاح Supabase في الإعدادات، ومن اتصالك بالإنترنت. بياناتك المحلية السابقة لم تتأثر.
           </p>
@@ -867,7 +888,7 @@ function AppInner() {
           <button
             onClick={() => window.location.reload()}
             className="mb-2 w-full rounded-lg py-2.5 text-sm font-bold text-white"
-            style={{ backgroundColor: "#1E7B45" }}
+            style={{ backgroundColor: "#4A6152" }}
           >
             إعادة المحاولة
           </button>
@@ -898,37 +919,40 @@ function AppInner() {
   const subTabs = buildSubTabs(section, currentMember, license, isAdmin);
 
   return (
-    <div dir="rtl" className="min-h-[700px] w-full" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT, color: TEXT }}>
-      {/* Header */}
-      <div className="flex flex-col gap-3 px-4 py-3 bg-navy sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="truncate text-base font-bold text-white sm:text-lg">نظام متابعة العملاء والتسعير</div>
-          <div className="truncate text-xs" style={{ color: "#EBD9CE" }}>{officeLine(settings)}</div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: simpleMode ? DANGER : cloud ? SAGE : "rgba(255,255,255,.16)", color: "#FFFFFF" }}>
-            <Wifi size={12} /> {simpleMode ? "وضع تجريبي مبسط (بدون صلاحيات)" : cloud ? "مزامنة سحابية مفعّلة" : "محلي (بدون مزامنة)"}
-          </span>
-          {simpleMode ? (
-            <span className="rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: "rgba(0,0,0,.22)", color: "#F2EBE2" }}>
-              {currentMember.name}
+    <div className="min-h-[700px] w-full" style={{ backgroundColor: PAPER, color: TEXT }}>
+      {/* ═══ الترويسة ═══
+          كتلة كحلية عريضة تحمل شعارًا وأقراصًا ملوّنة = مظهر لوحة تحكّم.
+          المكاتب المعمارية تفعل العكس: شريط أبيض، اسم المكتب بوزن عادي،
+          وخط شَعري واحد يفصله عمّا تحته. الانتباه للمحتوى لا للترويسة. */}
+      <header style={{ backgroundColor: PAPER, borderBottom: `1px solid ${BORDER}` }}>
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 pt-5 pb-3 sm:px-9">
+          <div className="min-w-0">
+            <div style={{ fontSize: 15.5, fontWeight: 600, letterSpacing: "-0.01em", color: INK }} className="truncate">
+              {settings?.officeName || t("نظام متابعة العملاء والتسعير")}
+            </div>
+            <Eyebrow style={{ marginTop: 3 }}>{officeLine(settings)}</Eyebrow>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-5">
+            <LangToggle />
+            <span className="eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <i className="stagedot" style={{ backgroundColor: simpleMode ? DANGER : cloud ? SAGE : MUTED }} />
+              {simpleMode ? t("وضع تجريبي مبسط (بدون صلاحيات)") : cloud ? t("مزامنة سحابية مفعّلة") : t("محلي (بدون مزامنة)")}
             </span>
-          ) : (
-            <button onClick={signOut} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: "rgba(0,0,0,.22)", color: "#F2EBE2" }}>
-              <span className="rounded-full px-2 py-0.5 font-bold" style={{ backgroundColor: (ROLES[currentMember.role] || ROLES.engineer).color, color: (ROLES[currentMember.role] || ROLES.engineer).textOn }}>
-                {roleLabel(currentMember.role)}
-              </span>
-              {currentMember.name} — تبديل
-            </button>
-          )}
+            {simpleMode ? (
+              <span className="eyebrow">{currentMember.name}</span>
+            ) : (
+              <button onClick={signOut} className="eyebrow" style={{ background: "none", border: "none", cursor: "pointer", color: INK }}>
+                {currentMember.name} · {roleLabel(currentMember.role)} — {t("تبديل")}
+              </button>
+            )}
+          </div>
         </div>
+
         {/* ═══ الأقسام الثلاثة ═══
-            بدل شريط واحد يكدّس كل شيء، ثلاثة أقسام لكلٍّ منطقه:
-            المكتب يُدار، والعملاء يُتابَعون، والمقاولون طرف له حساباته. */}
-        <nav className="-mx-1 flex gap-1.5 overflow-x-auto px-1 lg:mx-0 lg:overflow-visible"
-             style={{ scrollbarWidth: "none" }} aria-label="الأقسام الرئيسية">
+            نص عارٍ تحته خط عند النشاط — لا أقراص ولا أيقونات ملوّنة. */}
+        <nav className="-mx-1 flex overflow-x-auto px-5 sm:px-9" style={{ scrollbarWidth: "none" }} aria-label="الأقسام الرئيسية">
           {SECTIONS.map(({ key, label }) => {
-            const Icon = { office: LayoutDashboard, clients: Users, contractors: Ruler }[key];
             const active = section === key;
             return (
               <button
@@ -936,23 +960,19 @@ function AppInner() {
                 onClick={() => { setSection(key); setTab(SECTION_HOME[key]); }}
                 aria-current={active ? "page" : undefined}
                 className="navsec shrink-0"
-                style={{
-                  backgroundColor: active ? "#FDFCFA" : "rgba(255,255,255,.10)",
-                  color: active ? INK : "#E9E3DA",
-                }}
+                style={{ color: active ? INK : MUTED }}
               >
-                <Icon size={16} />
-                {label}
+                {t(label)}
               </button>
             );
           })}
         </nav>
-      </div>
+      </header>
 
       {/* ═══ تبويبات القسم الحالي ═══ */}
       {subTabs.length > 1 && (
-        <div className="flex gap-1.5 overflow-x-auto border-b px-3 py-2 sm:px-6"
-             style={{ backgroundColor: "#FDFCFA", borderColor: BORDER, scrollbarWidth: "none" }}
+        <div className="flex overflow-x-auto border-b px-5 sm:px-9"
+             style={{ backgroundColor: PAPER, borderColor: BORDER, scrollbarWidth: "none" }}
              aria-label="أقسام فرعية">
           {subTabs.map(({ key, label, Icon }) => {
             const active = tab === key;
@@ -960,13 +980,8 @@ function AppInner() {
               <button key={key} onClick={() => setTab(key)}
                 aria-current={active ? "page" : undefined}
                 className="navsub shrink-0"
-                style={{
-                  backgroundColor: active ? CLAY : "transparent",
-                  color: active ? "#FFFFFF" : MUTED,
-                  border: `1px solid ${active ? CLAY : BORDER}`,
-                }}>
-                {Icon && <Icon size={14} />}
-                {label}
+                style={{ color: active ? INK : MUTED }}>
+                {t(label)}
               </button>
             );
           })}
@@ -974,7 +989,7 @@ function AppInner() {
       )}
 
       {toast && (
-        <div className="fixed left-1/2 top-4 z-50 max-w-[92vw] -translate-x-1/2 rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-lg" style={{ backgroundColor: "#1E7B45" }}>
+        <div className="fixed left-1/2 top-4 z-50 max-w-[92vw] -translate-x-1/2 rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-lg" style={{ backgroundColor: "#4A6152" }}>
           {toast}
         </div>
       )}
@@ -983,7 +998,7 @@ function AppInner() {
         <div
           role="alert"
           className="fixed left-1/2 top-4 z-[60] flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg"
-          style={{ backgroundColor: "#B42318" }}
+          style={{ backgroundColor: "#A8322B" }}
         >
           <AlertCircle size={16} className="shrink-0" />
           <span>{errorToast}</span>
@@ -1006,14 +1021,14 @@ function AppInner() {
 
       <LicenseBanner license={license} onUpgrade={() => { setTab("billing"); setSection("office"); }} />
 
-      <div className="p-3 sm:p-6">
+      <div className="px-5 py-8 sm:px-9 sm:py-11">
         {tab === "dashboard" && (
           <Dashboard stats={pipelineStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); setSection("clients"); }} />
         )}
 
         {tab === "clients" && !selected && (
           <>
-            <ClientList clients={visibleClients} onAdd={addClient} onSelect={setSelectedId} onDelete={deleteClient} settings={settings} />
+            <ClientList coverUrls={coverUrls} clients={visibleClients} onAdd={addClient} onSelect={setSelectedId} onDelete={deleteClient} settings={settings} />
             {visibleClients.length > 0 && (
               <div className="mt-8 border-t pt-6" style={{ borderColor: BORDER }}>
                 <ClientsTable clients={visibleClients} settings={settings} currentMember={currentMember} priceBook={priceBook} onUpdate={updateClient} />
@@ -1096,42 +1111,41 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
   const recent = clients.slice(0, 5);
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between rounded-2xl p-5 bg-navy">
-        <div>
-          <h2 className="text-xl font-bold text-white">نظرة عامة على خط العملاء</h2>
-          <p className="mt-0.5 text-xs" style={{ color: "#EBD9CE" }}>لوحة متابعة شاملة لأداء المكتب</p>
-        </div>
-        <button onClick={onAdd} className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-bold shadow-sm" style={{ backgroundColor: GOLD, color: "#1F1F1F" }}>
-          <Plus size={16} /> عميل جديد
+      <SectionHead eyebrow={t("لوحة المتابعة")}
+                   title={t("نظرة عامة على خط العملاء")}
+                   subtitle={officeLine(settings)}>
+        <button onClick={onAdd} className="btn btn-primary shrink-0">
+          <Plus size={15} /> {t("عميل جديد")}
         </button>
-      </div>
+      </SectionHead>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="إجمالي العملاء" value={stats.count} icon={Users} />
-        <StatCard label="إجمالي قيمة خط الأعمال" value={fmt(stats.totalValue) + " ج.م"} accent={GOLD} icon={FileSpreadsheet} />
+      {/* سبع خانات في سبعة أعمدة — الشبكة السداسية كانت تترك فجوة */}
+      <div className="mb-10 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-4 lg:grid-cols-7">
+        <StatCard label="إجمالي العملاء" value={stats.count} />
+        <StatCard label="إجمالي قيمة خط الأعمال" value={fmt(stats.totalValue)} sub={currency()} accent={COPPER} />
         {STAGES.map(s => (
-          <StatCard key={s} label={s} value={stats.byStage[s].count} sub={fmt(stats.byStage[s].value) + " ج.م"} accent={STAGE_COLORS[s]} />
+          <StatCard key={s} label={s} value={stats.byStage[s].count} sub={fmt(stats.byStage[s].value) + " " + currency()} />
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-3 h-section">قيمة خط الأعمال حسب المرحلة</div>
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
+        <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
+          <div className="mb-5 h-section">{t("قيمة خط الأعمال حسب المرحلة")}</div>
           {stats.count > 0 ? <StageValueChart stats={stats} /> : (
             <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
           )}
         </div>
-        <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-3 h-section">نمو خط الأعمال آخر 6 أشهر</div>
+        <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
+          <div className="mb-5 h-section">{t("نمو خط الأعمال آخر 6 أشهر")}</div>
           {clients.length > 0 ? <div className="gridpaper"><MonthlyTrendChart clients={clients} settings={settings} /></div> : (
             <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
           )}
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 text-sm font-bold text-navy">توزيع خط الأعمال حسب المرحلة (بعدد العملاء)</div>
-        <div className="flex h-6 w-full overflow-hidden rounded-full bg-light">
+      <div className="mt-10" style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
+        <div className="mb-4 h-section">{t("توزيع خط الأعمال حسب المرحلة (بعدد العملاء)")}</div>
+        <div className="flex h-2 w-full overflow-hidden" style={{ backgroundColor: STONE }}>
           {STAGES.map(s => {
             const pct = stats.count ? (stats.byStage[s].count / stats.count) * 100 : 0;
             return pct > 0 ? <div key={s} style={{ width: pct + "%", backgroundColor: STAGE_COLORS[s] }} title={s} /> : null;
@@ -1142,19 +1156,21 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl p-4 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 text-sm font-bold text-navy">أحدث العملاء</div>
-        {recent.length === 0 && <div className="text-sm text-muted">لا يوجد عملاء بعد — ابدأ بإضافة أول عميل.</div>}
-        <div className="flex flex-col gap-2">
+      <div className="mt-10" style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
+        <div className="mb-3 h-section">{t("أحدث العملاء")}</div>
+        {recent.length === 0 && <div className="text-sm" style={{ color: MUTED }}>{t("لا يوجد عملاء بعد")}</div>}
+        <div className="flex flex-col">
           {recent.map(c => {
             const calc = effectiveTotals(c, settings);
             return (
-              <button key={c.id} onClick={() => onOpenClient(c.id)} className="flex items-center justify-between rounded-lg px-3 py-2 text-right transition-colors hover:bg-gray-50" style={{ border: `1px solid ${BORDER}` }}>
-                <div className="flex items-center gap-3">
+              <button key={c.id} onClick={() => onOpenClient(c.id)}
+                      className="flex items-center justify-between py-3 text-start transition-colors hover:opacity-60"
+                      style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <div className="flex items-center gap-4">
                   <Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} />
-                  <span className="text-sm font-semibold">{c.name || "بدون اسم"}</span>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>{c.name || t("بدون اسم")}</span>
                 </div>
-                <span className="text-sm font-bold text-navy">{fmt(calc.grandTotal)} ج.م</span>
+                <span className="num" style={{ fontSize: 13.5, color: INK }}>{fmt(calc.grandTotal)} {currency()}</span>
               </button>
             );
           })}
@@ -1165,7 +1181,7 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
 }
 
 /* ============================= Client list ============================= */
-function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
+function ClientList({ clients, onAdd, onSelect, onDelete, settings, coverUrls = {} }) {
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
@@ -1190,113 +1206,93 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings }) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-navy">العملاء ({visible.length}{visible.length !== clients.length ? ` من ${clients.length}` : ""})</h2>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button onClick={() => onAdd()} className="btn btn-primary">
-            <Plus size={15} /> عميل فارغ
+      <SectionHead
+        eyebrow={`${visible.length}${visible.length !== clients.length ? ` / ${clients.length}` : ""}`}
+        title={t("العملاء")}
+        subtitle={t("مشاريع المكتب — اضغط أي مشروع لفتح تفاصيله")}>
+        <button onClick={() => onAdd()} className="btn btn-primary">
+          <Plus size={15} /> {t("عميل فارغ")}
+        </button>
+      </SectionHead>
+
+      <div className="mb-7 flex flex-wrap items-center gap-2">
+        {TEMPLATES.map(tpl => (
+          <button
+            key={tpl.id || tpl.name}
+            onClick={() => onAdd(tpl)}
+            className="btn"
+            title={`${tpl.area} م²`}
+          >
+            {tpl.name}
           </button>
-          {TEMPLATES.map(t => (
-            <button
-              key={t.id || t.name}
-              onClick={() => onAdd(t)}
-              className="btn"
-              style={{ border: "1px solid var(--color-line)", color: NAVY, background: "#FFFFFF" }}
-              title={`${t.area} م² — مقايسة جاهزة`}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
+        ))}
       </div>
 
       {clients.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <div className="relative flex-1" style={{ minWidth: 180 }}>
             <input
-              placeholder="بحث بالاسم أو المهندس المسؤول..."
+              placeholder={t("بحث بالاسم أو المهندس المسؤول...")}
               value={query}
               onChange={e => setQuery(e.target.value)}
-              className="w-full rounded-lg py-2 pr-3 pl-3 text-sm"
-              style={{ border: `1px solid ${BORDER}` }}
+              className="inp"
             />
           </div>
-          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className="rounded-lg px-3 py-2 text-sm" style={{ border: `1px solid ${BORDER}` }}>
-            <option value="">كل المراحل</option>
-            {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className="inp" style={{ width: "auto", minWidth: 150 }}>
+            <option value="">{t("كل المراحل")}</option>
+            {STAGES.map(s => <option key={s} value={s}>{t(s)}</option>)}
           </select>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="rounded-lg px-3 py-2 text-sm" style={{ border: `1px solid ${BORDER}` }}>
-            <option value="date_desc">الأحدث أولاً</option>
-            <option value="date_asc">الأقدم أولاً</option>
-            <option value="value_desc">الأعلى قيمة</option>
-            <option value="value_asc">الأقل قيمة</option>
-            <option value="name_asc">الاسم (أ-ي)</option>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="inp" style={{ width: "auto", minWidth: 150 }}>
+            <option value="date_desc">{t("الأحدث أولاً")}</option>
+            <option value="date_asc">{t("الأقدم أولاً")}</option>
+            <option value="value_desc">{t("الأعلى قيمة")}</option>
+            <option value="value_asc">{t("الأقل قيمة")}</option>
+            <option value="name_asc">{t("الاسم (أ-ي)")}</option>
           </select>
         </div>
       )}
 
       {clients.length === 0 ? (
-        <div className="rounded-xl p-10 text-center" style={{ backgroundColor: "#FFFFFF", border: `1px dashed ${BORDER}`, color: MUTED }}>
-          لا يوجد عملاء بعد. اضغط "عميل جديد" للبدء.
+        <div className="py-20 text-center" style={{ borderTop: `1px solid ${BORDER}`, color: MUTED, fontSize: 13 }}>
+          {t("لا يوجد عملاء بعد. اضغط \"عميل جديد\" للبدء.")}
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-xl p-10 text-center" style={{ backgroundColor: "#FFFFFF", border: `1px dashed ${BORDER}`, color: MUTED }}>
-          لا يوجد عملاء مطابقين لهذا البحث/الفلتر.
+        <div className="py-20 text-center" style={{ borderTop: `1px solid ${BORDER}`, color: MUTED, fontSize: 13 }}>
+          {t("لا يوجد عملاء مطابقين لهذا البحث/الفلتر.")}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        /* شبكة المشاريع: الصورة أولًا بنسبة ثابتة، ثم البيانات تحتها كركن
+           مخطط. لا صندوق يحيط بالبطاقة ولا ظل — الفراغ وحده يفصلها. */
+        <div className="grid grid-cols-1 gap-x-7 gap-y-11 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map(c => {
             const calc = effectiveTotals(c, settings);
             return (
-              <div key={c.id} className="sheet overflow-hidden">
-                {/* شريط المرحلة: أول ما تلتقطه العين، كما في ترميز المخططات */}
-                <div style={{ height: 3, backgroundColor: STAGE_COLORS[c.stage] || MUTED }} />
+              <button key={c.id} onClick={() => onSelect(c.id)}
+                      className="text-start" style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}>
+                <ProjectCover client={c} urls={coverUrls} height={null} ratio="4 / 3" />
 
-                {/* كتلة العنوان — مقتبسة من ركن المخطط المعماري */}
-                <div className="titleblock">
-                  <div>
-                    <span className="tb-label">المساحة</span>
-                    <span className="tb-value">{c.area} م²</span>
+                <div style={{ paddingTop: 13 }}>
+                  <StagePill stage={c.stage} onDark={false} />
+                  <div style={{ fontSize: 16.5, fontWeight: 500, marginTop: 6, letterSpacing: "-0.01em" }} className="truncate">
+                    {c.name || t("بدون اسم")}
                   </div>
-                  <div>
-                    <span className="tb-label">المرحلة</span>
-                    <span className="tb-value" style={{ color: STAGE_COLORS[c.stage] || MUTED, fontSize: 11 }}>{c.stage}</span>
+                  <div className="eyebrow truncate" style={{ marginTop: 1 }}>
+                    {c.address || t("بدون عنوان")}
                   </div>
-                  <div>
-                    <span className="tb-label">المهندس</span>
-                    <span className="tb-value" style={{ fontSize: 11 }}>{c.engineer || "—"}</span>
-                  </div>
-                </div>
 
-                <div className="p-4">
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <div className="text-base font-semibold text-ink">{c.name || "بدون اسم"}</div>
-                  <button onClick={() => onDelete(c.id)} className="shrink-0 text-gray-300 hover:text-red-500"><Trash2 size={15} /></button>
-                </div>
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-muted"><MapPin size={12} />{c.address || "بدون عنوان"}</div>
-                {c.phone && <div className="mb-2 flex items-center gap-1.5 text-xs text-muted num"><Phone size={12} />{c.phone}</div>}
-                {(c.stage === "قيد التنفيذ" || c.progressPercent > 0) && (
-                  <div className="mb-2">
-                    <div className="mb-1 flex items-center justify-between text-xs font-semibold text-muted">
-                      <span>نسبة الإنجاز بالموقع</span>
-                      <span>{c.progressPercent || 0}%</span>
+                  {(c.stage === "قيد التنفيذ" || c.progressPercent > 0) && (
+                    <div style={{ marginTop: 11, height: 2, backgroundColor: STONE }}>
+                      <div style={{ width: `${c.progressPercent || 0}%`, height: 2, backgroundColor: INK }} />
                     </div>
-                    <div className="h-px w-full bg-light" style={{ height: 2 }}>
-                      <div style={{ width: `${c.progressPercent || 0}%`, height: 2, backgroundColor: "#1E7B45" }} />
-                    </div>
+                  )}
+
+                  <div className="metagrid" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))", columnGap: 14, marginTop: 13 }}>
+                    <Meta label="المساحة" value={`${c.area} م²`} />
+                    <Meta label="المهندس" value={c.engineer || "—"} />
+                    <Meta label={calc.frozen ? "قيمة العقد" : "تقديري"} value={`${fmt(calc.grandTotal)} ${currency()}`} />
                   </div>
-                )}
-                <div className="mb-3 flex items-baseline justify-between border-t pt-2" style={{ borderColor: "var(--color-line)" }}>
-                  <span className="lbl">
-                    {calc.frozen ? `متعاقد عليه · ${calc.signedAt}` : "تقديري"}
-                  </span>
-                  <span className="num text-base font-semibold text-navy">{fmt(calc.grandTotal)} ج.م</span>
                 </div>
-                <button onClick={() => onSelect(c.id)} className="w-full py-1.5 text-sm font-semibold" style={{ border: `1px solid ${NAVY}`, color: NAVY, borderRadius: 2 }}>
-                  فتح التفاصيل
-                </button>
-                </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -1326,8 +1322,8 @@ function PriceAnomalies({ client, allClients, priceBook, currentMember }) {
   );
   if (!can(currentMember, "editUnitPrice") || outliers.length === 0) return null;
   return (
-    <div className="sheet mt-4 p-3" style={{ borderColor: "#B45309" }}>
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: "#B45309" }}>
+    <div className="sheet mt-4 p-3" style={{ borderColor: "#8A5A2B" }}>
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: "#8A5A2B" }}>
         <AlertCircle size={14} /> أسعار تستحق المراجعة
       </div>
       {outliers.map(o => (
@@ -1335,7 +1331,7 @@ function PriceAnomalies({ client, allClients, priceBook, currentMember }) {
           <span className="code">{o.id}</span>
           <span className="font-semibold text-ink">{o.name}</span>
           <span className="num text-muted">
-            أدخلت <b style={{ color: "#C00000" }}>{fmt(o.entered)}</b> — المعتاد لديك قرابة <b>{fmt(o.reference)}</b>
+            أدخلت <b style={{ color: "#A8322B" }}>{fmt(o.entered)}</b> — المعتاد لديك قرابة <b>{fmt(o.reference)}</b>
           </span>
         </div>
       ))}
@@ -1429,8 +1425,8 @@ function RoomSchedule({ client, onChange }) {
       </div>
 
       {importMsg.length > 0 && (
-        <div className="mb-2 p-2 text-[10px]" style={{ background: "#FFF7E6", border: "1px solid #E8C97A", borderRadius: 2 }}>
-          {importMsg.map((w, i) => <div key={i} style={{ color: "#8A6D00" }}>• {w}</div>)}
+        <div className="mb-2 p-2 text-[10px]" style={{ background: "#FAF3E4", border: "1px solid #E8C97A", borderRadius: 2 }}>
+          {importMsg.map((w, i) => <div key={i} style={{ color: "#7A5E22" }}>• {w}</div>)}
         </div>
       )}
       {rooms.length === 0 ? (
@@ -1512,7 +1508,7 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
             type="number" inputMode="decimal" step="0.5" min="0" max="100"
             disabled={!mayEditPrice}
             className="w-20 rounded-md px-2 py-1 text-xs font-bold disabled:opacity-40"
-            style={{ border: `1px solid ${plan.pctMissing ? "#C00000" : BORDER}`, textAlign: "center" }}
+            style={{ border: `1px solid ${plan.pctMissing ? "#A8322B" : BORDER}`, textAlign: "center" }}
             value={usingOfficeDefault ? "" : (Number(client.agreedProfitPct) * 100).toFixed(1)}
             placeholder={((Number(settings.agreedProfitPct) || 0) * 100).toFixed(1)}
             onChange={e => onChange({
@@ -1525,7 +1521,7 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
 
       {plan.pctMissing && (
         <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold"
-             style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+             style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           لم تُحدَّد نسبة الربح — كل أعمدة الربح ستظهر صفرًا. اضبطها هنا لهذا العميل، أو من الإعدادات لكل العملاء.
         </div>
       )}
@@ -1555,13 +1551,13 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
                 </span>
                 <span className="text-left" style={{ minWidth: 88 }}>
                   <span className="lbl block">بعد التسليم</span>
-                  <span className="num block text-sm font-bold" style={{ color: row.profitDue > 0 ? "#1E7B45" : MUTED }}>
+                  <span className="num block text-sm font-bold" style={{ color: row.profitDue > 0 ? "#4A6152" : MUTED }}>
                     {fmt(row.profitDue)}
                   </span>
                 </span>
                 <span className="text-left" style={{ minWidth: 92 }}>
                   <span className="lbl block">إجمالي المرحلة</span>
-                  <span className="num block text-sm font-bold" style={{ color: "#8A6D00" }}>{fmt(row.phaseTotal)}</span>
+                  <span className="num block text-sm font-bold" style={{ color: "#7A5E22" }}>{fmt(row.phaseTotal)}</span>
                 </span>
                 <ChevronLeft size={14} style={{ transform: isOpen ? "rotate(-90deg)" : "none", color: MUTED }} />
               </button>
@@ -1622,11 +1618,11 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
   };
 
   const STATUS_STYLE = {
-    empty:     { bg: "#F5F7FA", fg: "#9CA3AF" },
-    awaiting:  { bg: "#FDECEC", fg: "#C00000" },
-    ready:     { bg: "#E8EEF7", fg: "#1F4E78" },
-    profitDue: { bg: "#FFF7E6", fg: "#B45309" },
-    done:      { bg: "#E2EFDA", fg: "#1E7B45" },
+    empty:     { bg: "#F4F1EC", fg: "#8C8880" },
+    awaiting:  { bg: "#FBEDEC", fg: "#A8322B" },
+    ready:     { bg: "#E8EEF7", fg: "#A8553A" },
+    profitDue: { bg: "#FAF3E4", fg: "#8A5A2B" },
+    done:      { bg: "#EDF2EE", fg: "#4A6152" },
   };
 
   return (
@@ -1637,13 +1633,13 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
       </div>
 
       <div className="mb-3 grid grid-cols-3 gap-2">
-        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: "#E2EFDA" }}>
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: "#EDF2EE" }}>
           <div className="lbl">المحصّل</div>
-          <div className="num text-sm font-bold" style={{ color: "#1E7B45" }}>{fmt(plan.collected)}</div>
+          <div className="num text-sm font-bold" style={{ color: "#4A6152" }}>{fmt(plan.collected)}</div>
         </div>
-        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: plan.dueNow > 0 ? "#FDECEC" : "#F5F7FA" }}>
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: plan.dueNow > 0 ? "#FBEDEC" : "#F4F1EC" }}>
           <div className="lbl">المستحق الآن</div>
-          <div className="num text-sm font-bold" style={{ color: plan.dueNow > 0 ? "#C00000" : MUTED }}>{fmt(plan.dueNow)}</div>
+          <div className="num text-sm font-bold" style={{ color: plan.dueNow > 0 ? "#A8322B" : MUTED }}>{fmt(plan.dueNow)}</div>
         </div>
         <div className="rounded-lg p-2.5 text-center bg-light">
           <div className="lbl">المتبقي على التعاقد</div>
@@ -1652,7 +1648,7 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
       </div>
 
       {plan.unallocated > 0 && (
-        <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+        <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           {fmt(plan.unallocated)} ج.م محصّلة غير منسوبة لأي مرحلة — دفعات سُجّلت قبل تفعيل نظام المراحل. انسبها من قائمة الدفعات أدناه.
         </div>
       )}
@@ -1677,13 +1673,13 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                 <>
                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {/* الدفعة الأولى — قبل البدء */}
-                    <div className="rounded-lg p-2.5" style={{ backgroundColor: row.baseSettled ? "#E2EFDA" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
+                    <div className="rounded-lg p-2.5" style={{ backgroundColor: row.baseSettled ? "#EDF2EE" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
                       <div className="flex items-baseline justify-between">
                         <span className="lbl">قيمة المرحلة — قبل البدء</span>
                         <span className="num text-sm font-bold text-navy">{fmt(row.quote)}</span>
                       </div>
-                      <div className="mt-1 h-1 w-full" style={{ backgroundColor: "#E3E7EE" }}>
-                        <div style={{ height: 4, width: `${row.quote > 0 ? Math.min(100, (row.paidBase / row.quote) * 100) : 100}%`, backgroundColor: "#1E7B45" }} />
+                      <div className="mt-1 h-1 w-full" style={{ backgroundColor: "#E4DFD7" }}>
+                        <div style={{ height: 4, width: `${row.quote > 0 ? Math.min(100, (row.paidBase / row.quote) * 100) : 100}%`, backgroundColor: "#4A6152" }} />
                       </div>
                       <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-muted">
@@ -1699,10 +1695,10 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                     </div>
 
                     {/* الدفعة الثانية — بعد التسليم */}
-                    <div className="rounded-lg p-2.5" style={{ backgroundColor: row.deliveredAt && row.profitSettled ? "#E2EFDA" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
+                    <div className="rounded-lg p-2.5" style={{ backgroundColor: row.deliveredAt && row.profitSettled ? "#EDF2EE" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
                       <div className="flex items-baseline justify-between">
                         <span className="lbl">نسبة الربح — بعد التسليم</span>
-                        <span className="num text-sm font-bold" style={{ color: "#1E7B45" }}>{fmt(row.profitDue)}</span>
+                        <span className="num text-sm font-bold" style={{ color: "#4A6152" }}>{fmt(row.profitDue)}</span>
                       </div>
                       <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-muted">
@@ -1712,7 +1708,7 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                         </span>
                         {mayCollect && row.profitClaimable && row.profitRemaining > 0.5 && (
                           <button onClick={() => addReceiptFor(row, "profit")}
-                                  className="text-[10px] font-bold underline" style={{ color: "#1E7B45" }}>
+                                  className="text-[10px] font-bold underline" style={{ color: "#4A6152" }}>
                             تسجيل تحصيل
                           </button>
                         )}
@@ -1722,11 +1718,11 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
 
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     {!row.mayStart ? (
-                      <span className="text-[11px] font-bold" style={{ color: "#C00000" }}>
+                      <span className="text-[11px] font-bold" style={{ color: "#A8322B" }}>
                         ⛔ لا تبدأ التنفيذ — لم يُحصَّل {fmt(row.baseRemaining)} ج.م من قيمة المرحلة
                       </span>
                     ) : (
-                      <span className="text-[11px] font-bold" style={{ color: "#1E7B45" }}>
+                      <span className="text-[11px] font-bold" style={{ color: "#4A6152" }}>
                         ✅ قيمة المرحلة محصّلة — مسموح بالبدء
                       </span>
                     )}
@@ -1735,8 +1731,8 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                               className="rounded-md px-2.5 py-1 text-[11px] font-bold"
                               style={{
                                 backgroundColor: row.deliveredAt ? "#FFFFFF" : NAVY,
-                                color: row.deliveredAt ? "#C00000" : "#FFFFFF",
-                                border: `1px solid ${row.deliveredAt ? "#C00000" : NAVY}`,
+                                color: row.deliveredAt ? "#A8322B" : "#FFFFFF",
+                                border: `1px solid ${row.deliveredAt ? "#A8322B" : NAVY}`,
                               }}>
                         {row.deliveredAt ? "إلغاء تعليم التسليم" : "تعليم المرحلة مُسلَّمة"}
                       </button>
@@ -1758,7 +1754,7 @@ function KindBar({ kinds, total }) {
   if (!(t > 0)) return null;
   return (
     <>
-      <div className="flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E3E7EE" }}>
+      <div className="flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E4DFD7" }}>
         {COST_KINDS.filter(k => (kinds[k] || 0) > 0).map(k => (
           <div key={k} title={`${KIND_LABEL[k]} — ${fmt(kinds[k])} ج.م`}
                style={{ width: `${((kinds[k] || 0) / t) * 100}%`, backgroundColor: KIND_COLOR[k] }} />
@@ -1804,7 +1800,7 @@ export function CostAnalysis({ client, priceBook, currentMember }) {
 
       {!analysis.complete && (
         <div className="mb-3 rounded-lg px-3 py-2 text-[11px] leading-5"
-             style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+             style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           {analysis.coverage === 0
             ? "لا يوجد بند محلَّل بعد — حلّل البنود من دفتر الأسعار ليصبح لهذا التقرير معنى."
             : `التحليل يغطي ${(analysis.coverage * 100).toFixed(0)}% من قيمة المشروع — ${analysis.unanalysed.length} بندًا بلا تحليل.`}
@@ -1838,7 +1834,7 @@ export function CostAnalysis({ client, priceBook, currentMember }) {
                         <span className="text-[10px] text-muted">
                           تكلفة الوحدة <b className="num">{fmt(l.unitCost)}</b> × {Math.round(l.qty * 100) / 100} {l.unit}
                           {" = "}<b className="num" style={{ color: NAVY }}>{fmt(l.cost)}</b>{" · ربح "}
-                          <b className="num" style={{ color: l.profit >= 0 ? "#1E7B45" : "#C00000" }}>{fmt(l.profit)}</b>
+                          <b className="num" style={{ color: l.profit >= 0 ? "#4A6152" : "#A8322B" }}>{fmt(l.profit)}</b>
                           {l.ratio != null && ` (${(l.ratio * 100).toFixed(0)}%)`}
                         </span>
                       </div>
@@ -1887,9 +1883,9 @@ export function ContractorLedger({ client, onChange }) {
         <>
           <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[["قيمة التعاقدات", led.contracted, NAVY],
-              ["مصروف فعلي", led.paid, "#C2410C"],
-              ["محتجز ضمان", led.retained, "#B45309"],
-              ["متبقٍ لهم", led.remaining, "#1E7B45"]].map(([lbl, val, col]) => (
+              ["مصروف فعلي", led.paid, "#A8553A"],
+              ["محتجز ضمان", led.retained, "#8A5A2B"],
+              ["متبقٍ لهم", led.remaining, "#4A6152"]].map(([lbl, val, col]) => (
               <div key={lbl} className="rounded-lg p-2 text-center bg-light">
                 <div className="lbl">{lbl}</div>
                 <div className="num text-sm font-bold" style={{ color: col }}>{fmt(val)}</div>
@@ -1899,7 +1895,7 @@ export function ContractorLedger({ client, onChange }) {
 
           <div className="flex flex-col gap-2">
             {led.rows.map(k => (
-              <div key={k.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${k.overCertified ? "#C00000" : BORDER}` }}>
+              <div key={k.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${k.overCertified ? "#A8322B" : BORDER}` }}>
                 <div className="flex flex-wrap items-center gap-2">
                   <input className="inp" style={{ width: 130, marginBottom: 0 }} placeholder="اسم المقاول"
                     value={k.name} onChange={e => patch(k.id, { name: e.target.value })} />
@@ -1914,24 +1910,24 @@ export function ContractorLedger({ client, onChange }) {
                     placeholder="قيمة التعاقد" value={k.contractValue || ""}
                     onChange={e => patch(k.id, { contractValue: Number(e.target.value) || 0 })} />
                   <span className="code">{k.id}</span>
-                  <button onClick={() => remove(k.id)} className="text-xs" style={{ color: "#C00000" }}>✕</button>
+                  <button onClick={() => remove(k.id)} className="text-xs" style={{ color: "#A8322B" }}>✕</button>
                 </div>
 
-                <div className="mt-2 h-1.5 w-full" style={{ backgroundColor: "#E3E7EE" }}>
+                <div className="mt-2 h-1.5 w-full" style={{ backgroundColor: "#E4DFD7" }}>
                   <div style={{ height: 6, width: `${Math.min(100, k.progress * 100)}%`,
-                                backgroundColor: k.overCertified ? "#C00000" : "#1E7B45" }} />
+                                backgroundColor: k.overCertified ? "#A8322B" : "#4A6152" }} />
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 text-[10px]">
                   <span className="text-muted">مستخلصات <b className="num">{k.payments}</b></span>
                   <span className="text-muted">مصروف <b className="num">{fmt(k.paid)}</b></span>
-                  <span style={{ color: "#B45309" }}>محتجز <b className="num">{fmt(k.retained)}</b></span>
+                  <span style={{ color: "#8A5A2B" }}>محتجز <b className="num">{fmt(k.retained)}</b></span>
                   <span className="text-muted">معتمد <b className="num">{fmt(k.certified)}</b></span>
-                  <span style={{ color: k.remaining < 0 ? "#C00000" : "#1E7B45" }}>
+                  <span style={{ color: k.remaining < 0 ? "#A8322B" : "#4A6152" }}>
                     متبقٍ <b className="num">{fmt(k.remaining)}</b>
                   </span>
                 </div>
                 {k.overCertified && (
-                  <div className="mt-1 text-[10px] font-bold" style={{ color: "#C00000" }}>
+                  <div className="mt-1 text-[10px] font-bold" style={{ color: "#A8322B" }}>
                     ⛔ المصروف تجاوز قيمة التعاقد بـ {fmt(-k.remaining)} ج.م — راجع قبل أي صرف آخر
                   </div>
                 )}
@@ -1942,7 +1938,7 @@ export function ContractorLedger({ client, onChange }) {
       )}
 
       {led.orphanTotal > 0 && (
-        <div className="mt-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+        <div className="mt-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           {fmt(led.orphanTotal)} ج.م مصروفات مقاولي باطن غير منسوبة لمقاول معيّن
           ({led.orphanPayments.length} مصروف) — انسبها ليظهر متبقي كل مقاول بدقة.
         </div>
@@ -1994,7 +1990,7 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
               <span className="text-muted">مخطط </span>
               <b className="num">{fmt(pva.plannedTotal)}</b>
               <span className="text-muted"> · فعلي </span>
-              <b className="num" style={{ color: pva.diff < 0 ? "#C00000" : "#1E7B45" }}>{fmt(pva.spentTotal)}</b>
+              <b className="num" style={{ color: pva.diff < 0 ? "#A8322B" : "#4A6152" }}>{fmt(pva.spentTotal)}</b>
             </span>
           </div>
           {pva.totals.filter(t => t.planned > 0 || t.spent > 0).map(t => {
@@ -2006,26 +2002,26 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                   <span className="num">
                     <span className="text-muted">{fmt(t.planned)}</span>
                     {" → "}
-                    <b style={{ color: t.overrun ? "#C00000" : "#1E7B45" }}>{fmt(t.spent)}</b>
-                    {t.overrun && <span style={{ color: "#C00000" }}> (+{fmt(-t.diff)})</span>}
+                    <b style={{ color: t.overrun ? "#A8322B" : "#4A6152" }}>{fmt(t.spent)}</b>
+                    {t.overrun && <span style={{ color: "#A8322B" }}> (+{fmt(-t.diff)})</span>}
                   </span>
                 </div>
                 <div className="mt-0.5 flex gap-0.5">
                   <div style={{ height: 5, width: `${(t.planned / max) * 100}%`, backgroundColor: KIND_COLOR[t.kind], opacity: 0.35 }} />
                 </div>
                 <div className="flex gap-0.5">
-                  <div style={{ height: 5, width: `${(t.spent / max) * 100}%`, backgroundColor: t.overrun ? "#C00000" : KIND_COLOR[t.kind] }} />
+                  <div style={{ height: 5, width: `${(t.spent / max) * 100}%`, backgroundColor: t.overrun ? "#A8322B" : KIND_COLOR[t.kind] }} />
                 </div>
               </div>
             );
           })}
           {pva.worstKind && (
-            <div className="mt-2 text-[10px] font-bold" style={{ color: "#C00000" }}>
+            <div className="mt-2 text-[10px] font-bold" style={{ color: "#A8322B" }}>
               أكبر تجاوز في {KIND_LABEL[pva.worstKind.kind]}: {fmt(pva.worstKind.spent - pva.worstKind.planned)} ج.م فوق المخطط
             </div>
           )}
           {pva.coverage < 1 && (
-            <div className="mt-1 text-[10px]" style={{ color: "#8A6D00" }}>
+            <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
               التحليل يغطي {(pva.coverage * 100).toFixed(0)}% من المشروع — المقارنة تخصّ المحلَّل وحده.
             </div>
           )}
@@ -2042,20 +2038,20 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
               <button onClick={() => setOpenPhase(isOpen ? null : l.phase)}
                       className="flex w-full flex-wrap items-center justify-between gap-2 text-right">
                 <span className="text-xs font-bold" style={{ color: PHASE_COLORS[l.phase] || NAVY }}>{l.phase}</span>
-                <span className="num text-xs font-bold" style={{ color: l.overrun ? "#C00000" : "#1E7B45" }}>
+                <span className="num text-xs font-bold" style={{ color: l.overrun ? "#A8322B" : "#4A6152" }}>
                   {fmt(l.spent)} / {fmt(l.planned)} ج.م
                 </span>
               </button>
-              <div className="mt-1 h-1.5 w-full" style={{ backgroundColor: "#E3E7EE" }}>
-                <div style={{ height: 6, width: `${Math.min(100, l.ratio * 100)}%`, backgroundColor: l.overrun ? "#C00000" : "#1E7B45" }} />
+              <div className="mt-1 h-1.5 w-full" style={{ backgroundColor: "#E4DFD7" }}>
+                <div style={{ height: 6, width: `${Math.min(100, l.ratio * 100)}%`, backgroundColor: l.overrun ? "#A8322B" : "#4A6152" }} />
               </div>
               {l.overrun && (
-                <div className="mt-1 text-[10px] font-bold" style={{ color: "#C00000" }}>
+                <div className="mt-1 text-[10px] font-bold" style={{ color: "#A8322B" }}>
                   تجاوز {fmt(-l.diff)} ج.م فوق قيمة بنود المقايسة
                 </div>
               )}
               {ph && ph.indirect > 0 && (
-                <div className="mt-1 text-[10px]" style={{ color: "#8A6D00" }}>
+                <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
                   منها {fmt(ph.indirect)} ج.م مصروفات غير مباشرة (معدات ونقل وخلافه) تُوزَّع على بنود المرحلة
                 </div>
               )}
@@ -2063,7 +2059,7 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
               {isOpen && ph && (
                 <div className="mt-2 border-t pt-2" style={{ borderColor: BORDER }}>
                   {!ph.comparable ? (
-                    <div className="text-[10px]" style={{ color: "#8A6D00" }}>
+                    <div className="text-[10px]" style={{ color: "#7A5E22" }}>
                       لا يوجد تحليل سعر لبنود هذه المرحلة — المقارنة بالفئة بلا معنى حتى تُحلَّل من دفتر الأسعار.
                     </div>
                   ) : ph.kinds.filter(k => !k.silent).map(k => (
@@ -2073,8 +2069,8 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                       <span className="num">
                         <span className="text-muted">مخطط {fmt(k.planned)}</span>
                         {" · "}
-                        <b style={{ color: k.overrun ? "#C00000" : "#1E7B45" }}>فعلي {fmt(k.spent)}</b>
-                        {k.overrun && <span style={{ color: "#C00000" }}> (+{fmt(-k.diff)})</span>}
+                        <b style={{ color: k.overrun ? "#A8322B" : "#4A6152" }}>فعلي {fmt(k.spent)}</b>
+                        {k.overrun && <span style={{ color: "#A8322B" }}> (+{fmt(-k.diff)})</span>}
                       </span>
                     </div>
                   ))}
@@ -2108,7 +2104,7 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                     value={e.amount || ""} onChange={ev => patchExpense(e.id, { amount: Number(ev.target.value) || 0 })} />
                   <input className="inp flex-1" style={{ minWidth: 110, marginBottom: 0 }} placeholder="المورد / البيان"
                     value={e.vendor || ""} onChange={ev => patchExpense(e.id, { vendor: ev.target.value })} />
-                  <button onClick={() => removeExpense(e.id)} className="text-xs" style={{ color: "#C00000" }}>✕</button>
+                  <button onClick={() => removeExpense(e.id)} className="text-xs" style={{ color: "#A8322B" }}>✕</button>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <select className="inp" style={{ width: 160, marginBottom: 0 }} value={e.itemId || ""}
@@ -2135,10 +2131,10 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
           </div>
           <div className="mt-2 flex justify-between text-xs font-bold">
             <span className="text-muted">إجمالي المصروف</span>
-            <span className="num" style={{ color: bud.remaining < 0 ? "#C00000" : TEXT }}>{fmt(bud.spent)} ج.م</span>
+            <span className="num" style={{ color: bud.remaining < 0 ? "#A8322B" : TEXT }}>{fmt(bud.spent)} ج.م</span>
           </div>
           {pva.unassigned > 0 && (
-            <div className="mt-1 text-[10px]" style={{ color: "#8A6D00" }}>
+            <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
               منها {fmt(pva.unassigned)} ج.م بلا مرحلة — لا تدخل مقارنة أي مرحلة حتى تُنسب.
             </div>
           )}
@@ -2195,10 +2191,9 @@ export function ContractorsRegistry({ clients, currentMember, onOpenClient }) {
 
   return (
     <div>
-      <div className="mb-4">
-        <div className="h-page">المقاولون</div>
-        <div className="text-xs text-muted">حسابات مقاولي الباطن مجمّعة عبر كل مشاريع المكتب</div>
-      </div>
+      <SectionHead title="المقاولون"
+                   subtitle="حسابات مقاولي الباطن مجمّعة عبر كل مشاريع المكتب"
+                   seed="contractors-section" height={104} />
 
       {registry.length === 0 ? (
         <div className="sheet p-8 text-center">
@@ -2312,7 +2307,7 @@ function FinancePanel({ client, settings, priceBook, currentMember, onChange }) 
         <SummaryRow label="أوامر تغيير معتمدة" value={cv.variations} />
         <SummaryRow label="القيمة الحالية" value={cv.total} bold />
         {cv.pendingCount > 0 && (
-          <div className="mt-2 text-xs" style={{ color: "#B45309" }}>
+          <div className="mt-2 text-xs" style={{ color: "#8A5A2B" }}>
             {cv.pendingCount} أمر تغيير بانتظار موافقة العميل بقيمة {fmt(cv.pendingValue)} ج.م — غير محتسبة أعلاه
           </div>
         )}
@@ -2385,7 +2380,7 @@ function FinancePanel({ client, settings, priceBook, currentMember, onChange }) 
                   <input className="inp flex-1" style={{ minWidth: 110 }} placeholder="ملاحظة"
                     value={r.note || ""} onChange={e => patchReceipt(r.id, { note: e.target.value })} />
                   <button onClick={() => onChange({ receipts: (client.receipts || []).filter(x => x.id !== r.id) })}
-                          className="text-xs" style={{ color: "#C00000" }}>✕</button>
+                          className="text-xs" style={{ color: "#A8322B" }}>✕</button>
                 </div>
               ))}
             </div>
@@ -2412,31 +2407,71 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
   }, [client, priceBook, currentMember]);
   const [innerTab, setInnerTab] = useState("pricing"); // pricing | site
 
+  /* ═══ غلاف المشروع ═══
+     الرابط موقّت لأن التخزين خاص، فيُطلب عند فتح المشروع لا مرة واحدة.
+     موضع الخطّاف هنا قبل أي return مبكّر التزامًا بقواعد الخطّافات. */
+  const [coverUrl, setCoverUrl] = useState("");
+  const coverPath = client.coverPath || client.lastPhotoPath;
+  useEffect(() => {
+    let alive = true;
+    if (!coverPath || !photosAvailable()) { setCoverUrl(""); return; }
+    signedUrls([coverPath]).then(u => { if (alive) setCoverUrl(u[coverPath] || ""); }).catch(() => {});
+    return () => { alive = false; };
+  }, [coverPath]);
+
   /* ورقة المصروفات تُدرج فقط لمن يرى أساس التكلفة — المهندس يصدّر المقايسة
      والتحصيل، ولا يصدّر ما دفعه المكتب لمورديه. */
   const exportExcel = () => exportFullBOQ(client, settings, { includeCost: can(currentMember, "viewCostBasis"), priceBook });
 
   return (
     <div>
-      <button onClick={onBack} className="mb-4 flex items-center gap-1 text-sm font-semibold text-navy">
-        <ChevronLeft size={16} /> العودة لقائمة العملاء
+      <button onClick={onBack} className="eyebrow mb-6 flex items-center gap-1"
+              style={{ background: "none", border: "none", cursor: "pointer" }}>
+        <ChevronLeft size={13} /> {t("رجوع")}
       </button>
 
+      {/* ═══ ترويسة المشروع ═══
+          صورة عريضة يعلوها اسم المشروع، وتحتها بيانات كركن مخطط.
+          هذه هي الشاشة التي يراها العميل حين يفتح المكتب مشروعه أمامه. */}
+      <div className="mb-9">
+        <ProjectCover client={{ ...client, coverUrl: coverUrl || undefined }} height={null} ratio="16 / 7">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <StagePill stage={client.stage} onDark={!!coverUrl} />
+              <div className="truncate" style={{ fontSize: 24, fontWeight: 500, letterSpacing: "-0.02em", marginTop: 4 }}>
+                {client.name || t("بدون اسم")}
+              </div>
+            </div>
+          </div>
+        </ProjectCover>
+
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+          <MetaGrid cols={4} style={{ flex: "1 1 420px", columnGap: 22 }} items={[
+            { label: "المساحة", value: `${client.area} م²` },
+            { label: "المهندس", value: client.engineer || "—" },
+            { label: "الحالة", value: t(client.stage) },
+            { label: calc.frozen ? "قيمة العقد" : "تقديري", value: `${fmt(calc.grandTotal)} ${currency()}` },
+          ]} />
+          {photosAvailable() && (
+            <CoverUpload clientId={client.id} uploadPhoto={uploadPhoto}
+                         onUploaded={(path) => onChange({ coverPath: path })} />
+          )}
+        </div>
+      </div>
+
       {(client.stage === "تم التعاقد" || client.stage === "قيد التنفيذ" || client.stage === "تم التسليم") && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl p-4" style={{ backgroundColor: "#FCE9B5", border: "1px solid " + GOLD }}>
-          <div className="flex items-center gap-2">
-            <PartyPopper size={20} style={{ color: "#8A6D00" }} />
-            <div>
-              <div className="text-sm font-bold" style={{ color: "#5C4700" }}>هذا العميل وصل لمرحلة التعاقد — العقد جاهز للتحميل بجدول دفعات محسوب فعليًا</div>
-              <div className="text-xs" style={{ color: "#8A6D00" }}>القيمة الإجمالية: {fmt(calc.grandTotal)} ج.م — يمكن فتح الملف وتعديله في Word مباشرة</div>
+        <div className="mb-7 flex flex-wrap items-center justify-between gap-3 py-4"
+             style={{ borderTop: `1px solid ${INK}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 500 }}>العقد جاهز للتحميل بجدول دفعات محسوب فعليًا</div>
+            <div className="num" style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
+              {fmt(calc.grandTotal)} {currency()} — ملف Word قابل للتعديل
             </div>
           </div>
           <button
             onClick={() => generateContractDocx(client, calc, settings).then(d => downloadDocx(`عقد_${client.name || "عميل"}.docx`, d))}
-            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold shadow-sm"
-            style={{ backgroundColor: "#1F1F1F", color: "#FFFFFF" }}
-          >
-            <FileText size={16} /> تحميل العقد الآن
+            className="btn btn-primary">
+            <FileText size={15} /> تحميل العقد
           </button>
         </div>
       )}
@@ -2493,11 +2528,11 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
             </Field>
           </div>
 
-          <button onClick={exportExcel} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold text-white shadow-sm bg-gold">
-            <Download size={16} /> تصدير المقايسة Excel
+          <button onClick={exportExcel} className="btn mt-5 w-full">
+            <Download size={15} /> {t("تصدير")} — Excel
           </button>
-          <button onClick={() => buildAndDownloadClientPptx(client, calc, settings)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold text-white shadow-sm" style={{ backgroundColor: "#2E5395" }}>
-            <FileText size={16} /> تصدير عرض تقديمي PowerPoint
+          <button onClick={() => buildAndDownloadClientPptx(client, calc, settings)} className="btn mt-2 w-full">
+            <FileText size={15} /> {t("تصدير")} — PowerPoint
           </button>
           <div className="mt-2 flex items-start gap-1.5 text-xs text-muted">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
@@ -2598,12 +2633,12 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
             <SummaryRow label="احتياطي أعمال غير منظورة" value={calc.contingency} />
             <SummaryRow label="التصميم" value={calc.byScope["تصميم"]} />
             <SummaryRow label="الفرش والأثاث" value={calc.byScope["الفرش والأثاث"]} />
-            <div className="my-2 h-px" style={{ backgroundColor: "#2E5395" }} />
+            <div className="my-2 h-px" style={{ backgroundColor: "#6B5B7B" }} />
             <SummaryRow label="الإجمالي قبل الضريبة" value={calc.subtotal} bold />
             <SummaryRow label="ضريبة القيمة المضافة" value={calc.vat} />
             <div className="mt-3 flex items-center justify-between px-3 py-2.5 bg-gold" style={{ borderRadius: 2 }}>
-              <span className="text-sm font-bold" style={{ color: "#1F1F1F" }}>الإجمالي النهائي المستحق</span>
-              <span className="num text-lg font-bold" style={{ color: "#1F1F1F" }}>{fmt(calc.grandTotal)} ج.م</span>
+              <span className="text-sm font-bold" style={{ color: "#1C1B19" }}>الإجمالي النهائي المستحق</span>
+              <span className="num text-lg font-bold" style={{ color: "#1C1B19" }}>{fmt(calc.grandTotal)} ج.م</span>
             </div>
 
             {/* الهامش — الرقم الذي لم يكن النظام يعرفه إطلاقًا.
@@ -2617,8 +2652,8 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
                   ) : (
                     <span
                       className="num text-lg font-semibold"
-                      style={{ color: marginHealth(margin.ratio, priceBook.minMargin) === "ok" ? "#1E7B45"
-                             : marginHealth(margin.ratio, priceBook.minMargin) === "thin" ? "#B45309" : "#C00000" }}
+                      style={{ color: marginHealth(margin.ratio, priceBook.minMargin) === "ok" ? "#4A6152"
+                             : marginHealth(margin.ratio, priceBook.minMargin) === "thin" ? "#8A5A2B" : "#A8322B" }}
                     >
                       {(margin.ratio * 100).toFixed(1)}%
                     </span>
@@ -2632,14 +2667,14 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
                 )}
                 {/* الصدق هنا أهم من الرقم: نقول بوضوح كم من المشروع نعرف تكلفته */}
                 {!margin.complete && (
-                  <div className="text-[10px]" style={{ color: "#8A6D00" }}>
+                  <div className="text-[10px]" style={{ color: "#7A5E22" }}>
                     {margin.coverage === 0
                       ? `لا توجد تكاليف مُدخلة — ${margin.unknownItems.length} بندًا. أدخلها من دفتر الأسعار.`
                       : `الهامش يخص ${(margin.coverage * 100).toFixed(0)}% من قيمة المشروع فقط — ${margin.unknownItems.length} بندًا بلا تكلفة.`}
                   </div>
                 )}
                 {margin.weakItems.length > 0 && (
-                  <div className="mt-2 border-t pt-2 text-[10px]" style={{ borderColor: "var(--color-line)", color: "#C00000" }}>
+                  <div className="mt-2 border-t pt-2 text-[10px]" style={{ borderColor: "var(--color-line)", color: "#A8322B" }}>
                     بنود تحت الحد الأدنى للهامش: {margin.weakItems.slice(0, 3).map(w => w.name).join(" · ")}
                   </div>
                 )}
@@ -2654,8 +2689,8 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
       </div>
 
       <style>{`
-        .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid ${BORDER}; font-size: 13px; font-family: 'Cairo', Arial, sans-serif; }
-        .inp:focus { outline: 2px solid ${NAVY}; outline-offset: 0; }
+        .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 10px 2px; border: none; border-bottom: 1px solid #C9C6C0; border-radius: 0; background: transparent; font-size: 13.5px; font-family: inherit; color: #14110F; }
+        .inp:focus { outline: none; border-bottom: 2px solid #14110F; }
       `}</style>
     </div>
   );
@@ -2706,14 +2741,14 @@ function FullItemBOQ({ client, onChange, currentMember }) {
         <div className="flex items-center gap-2">
           <div className="text-sm font-bold text-navy">المقايسة الكاملة القابلة للتعديل ({ITEMS.length} بند)</div>
           {customCount > 0 && (
-            <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+            <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
               {customCount} تخصيص يدوي
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {customCount > 0 && (
-            <button onClick={resetAll} className="text-xs font-semibold underline" style={{ color: "#C00000" }}>
+            <button onClick={resetAll} className="text-xs font-semibold underline" style={{ color: "#A8322B" }}>
               إعادة الكل للوضع الافتراضي
             </button>
           )}
@@ -2798,12 +2833,12 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       readOnly={!mayEditPrice}
                       title={mayEditPrice ? "" : "تعديل سعر الوحدة متاح لمدير المشاريع أو مالك المكتب فقط"}
                       className="w-full rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                      style={{ border: `1px solid ${r.hasPriceOverride ? "#BF9000" : BORDER}`, color: r.hasPriceOverride ? "#8A6D00" : TEXT, backgroundColor: mayEditPrice ? "transparent" : "#F5F7FA", cursor: mayEditPrice ? "auto" : "not-allowed" }}
+                      style={{ border: `1px solid ${r.hasPriceOverride ? "#B08A3E" : BORDER}`, color: r.hasPriceOverride ? "#7A5E22" : TEXT, backgroundColor: mayEditPrice ? "transparent" : "#F4F1EC", cursor: mayEditPrice ? "auto" : "not-allowed" }}
                       value={rec.price !== undefined ? rec.price : Math.round(r.price)}
                       onChange={e => { if (mayEditPrice) setPriceOverride(r.id, e.target.value); }}
                     />
                     {r.overrides.length > 0 && (
-                      <span className="text-[9px] font-semibold" style={{ color: "#8A6D00" }}>
+                      <span className="text-[9px] font-semibold" style={{ color: "#7A5E22" }}>
                         تجاوز فردي: {r.overrides.join(" · ")} — يتخطى إعداد الفئة ({r.scopeLevel})
                       </span>
                     )}
@@ -2818,7 +2853,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                   </div>
                   <div className="col-span-4 text-left sm:col-span-1">
                     {isCustom && (
-                      <button onClick={() => resetItem(r.id)} title="إعادة الافتراضي" className="text-xs" style={{ color: "#C00000" }}>↺</button>
+                      <button onClick={() => resetItem(r.id)} title="إعادة الافتراضي" className="text-xs" style={{ color: "#A8322B" }}>↺</button>
                     )}
                   </div>
                 </div>
@@ -2879,7 +2914,7 @@ function VisitPhotos({ clientId, visit }) {
         </label>
         {items.length > 0 && <span className="text-[10px] text-muted">{items.length} صورة</span>}
       </div>
-      {err && <div className="mt-1 text-[10px]" style={{ color: "#C00000" }}>{err}</div>}
+      {err && <div className="mt-1 text-[10px]" style={{ color: "#A8322B" }}>{err}</div>}
       {items.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {items.map(it => (
@@ -2954,7 +2989,7 @@ function SiteVisitLog({ client, onChange }) {
         <div className="flex items-center gap-2">
           <div className="text-sm font-bold text-navy">سجل متابعة الموقع</div>
           {client.progressPercent > 0 && (
-            <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
+            <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>
               نسبة الإنجاز الحالية: {client.progressPercent}%
             </span>
           )}
@@ -2983,7 +3018,7 @@ function SiteVisitLog({ client, onChange }) {
           <Field label="ملاحظات الزيارة">
             <textarea className="inp" rows={3} value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} />
           </Field>
-          <button onClick={submitVisit} disabled={!draft.date} className="rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: "#1E7B45" }}>
+          <button onClick={submitVisit} disabled={!draft.date} className="rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: "#4A6152" }}>
             حفظ الزيارة
           </button>
         </div>
@@ -3035,8 +3070,8 @@ function Field({ label, children }) {
 
 function SummaryRow({ label, value, bold }) {
   return (
-    <div className="mb-1.5 flex items-center justify-between text-sm" style={{ color: "#D9E1F2" }}>
-      <span style={{ fontWeight: bold ? 700 : 400, color: bold ? "#FFFFFF" : "#D9E1F2" }}>{label}</span>
+    <div className="mb-1.5 flex items-center justify-between text-sm" style={{ color: "#F2EBE2" }}>
+      <span style={{ fontWeight: bold ? 700 : 400, color: bold ? "#FFFFFF" : "#F2EBE2" }}>{label}</span>
       <span style={{ fontWeight: bold ? 700 : 600, color: "#FFFFFF" }}>{fmt(value)} ج.م</span>
     </div>
   );
@@ -3056,7 +3091,7 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
   };
 
   return (
-    <div dir="rtl" className="flex min-h-[700px] w-full items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
+    <div className="flex min-h-[700px] w-full items-center justify-center" style={{ backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
         <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
@@ -3086,8 +3121,8 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
           </>
         )}
         <style>{`
-          .inp { width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid ${BORDER}; font-size: 13px; font-family: 'Cairo', Arial, sans-serif; }
-          .inp:focus { outline: 2px solid ${NAVY}; outline-offset: 0; }
+          .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 10px 2px; border: none; border-bottom: 1px solid #C9C6C0; border-radius: 0; background: transparent; font-size: 13.5px; font-family: inherit; color: #14110F; }
+          .inp:focus { outline: none; border-bottom: 2px solid #14110F; }
         `}</style>
       </div>
     </div>
@@ -3150,10 +3185,10 @@ function CloudAuthGate({ onAuthSuccess }) {
   };
 
   return (
-    <div dir="rtl" className="flex min-h-[700px] w-full items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
+    <div className="flex min-h-[700px] w-full items-center justify-center" style={{ backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
-        <div className="mb-1 flex items-center justify-center gap-1.5 text-xs" style={{ color: "#1E7B45" }}>
+        <div className="mb-1 flex items-center justify-center gap-1.5 text-xs" style={{ color: "#4A6152" }}>
           <Wifi size={13} /> وضع المزامنة السحابية مفعّل
         </div>
         <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
@@ -3227,7 +3262,7 @@ function CloudAuthGate({ onAuthSuccess }) {
             )}
             <input className="inp" type="email" placeholder="البريد الإلكتروني" value={email} onChange={e => setEmail(e.target.value)} />
             <input className="inp" type="password" placeholder="كلمة المرور" value={password} onChange={e => setPassword(e.target.value)} />
-            {error && <div className="mb-3 text-xs font-semibold" style={{ color: "#C00000" }}>{error}</div>}
+            {error && <div className="mb-3 text-xs font-semibold" style={{ color: "#A8322B" }}>{error}</div>}
             <button
               disabled={busy || !email.trim() || !password}
               onClick={mode === "signin" ? handleSignIn : handleSignUp}
@@ -3244,8 +3279,8 @@ function CloudAuthGate({ onAuthSuccess }) {
           تعذّر الدخول؟ ارجع مؤقتًا للوضع المحلي
         </button>
         <style>{`
-          .inp { width: 100%; margin-bottom: 12px; padding: 9px 12px; border-radius: 8px; border: 1px solid ${BORDER}; font-size: 13px; font-family: 'Cairo', Arial, sans-serif; }
-          .inp:focus { outline: 2px solid ${NAVY}; outline-offset: 0; }
+          .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 10px 2px; border: none; border-bottom: 1px solid #C9C6C0; border-radius: 0; background: transparent; font-size: 13.5px; font-family: inherit; color: #14110F; }
+          .inp:focus { outline: none; border-bottom: 2px solid #14110F; }
         `}</style>
       </div>
     </div>
@@ -3261,11 +3296,11 @@ function PendingApprovalScreen({ onSignOut, onRefresh }) {
   }, [onRefresh]);
 
   return (
-    <div dir="rtl" className="flex min-h-[700px] w-full items-center justify-center" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT }}>
+    <div className="flex min-h-[700px] w-full items-center justify-center" style={{ backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 text-center shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-3 flex justify-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: "#FFF7E6" }}>
-            <Loader2 size={26} className="animate-spin" style={{ color: "#8A6D00" }} />
+          <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: "#FAF3E4" }}>
+            <Loader2 size={26} className="animate-spin" style={{ color: "#7A5E22" }} />
           </div>
         </div>
         <div className="mb-2 text-lg font-bold text-navy">حسابك بانتظار الموافقة</div>
@@ -3455,21 +3490,21 @@ alter publication supabase_realtime add table profiles;`;
         </p>
 
         {cloud ? (
-          <div className="rounded-lg p-3" style={{ backgroundColor: currentSimpleMode ? "#FEF3E2" : "#E2EFDA" }}>
-            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold" style={{ color: currentSimpleMode ? "#B45309" : "#1E7B45" }}>
+          <div className="rounded-lg p-3" style={{ backgroundColor: currentSimpleMode ? "#FEF3E2" : "#EDF2EE" }}>
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold" style={{ color: currentSimpleMode ? "#8A5A2B" : "#4A6152" }}>
               <Wifi size={14} /> {currentSimpleMode ? "المزامنة مفعّلة — وضع تجريبي مبسط (بدون صلاحيات)" : "المزامنة مفعّلة — وضع الصلاحيات الكامل"}
             </div>
             {currentSimpleMode && (
-              <p className="mb-2 text-xs leading-6" style={{ color: "#8A6D00" }}>
+              <p className="mb-2 text-xs leading-6" style={{ color: "#7A5E22" }}>
                 أي جهاز يفتح نفس الرابط والمفتاح بيدخل فورًا بدون تسجيل أو موافقة. مناسب للتجربة الآن فقط —
                 لما تكون جاهز لبيانات عملاء حقيقية، ارجع هنا واضغط "التحويل لوضع الصلاحيات الكامل".
               </p>
             )}
             <div className="flex flex-wrap gap-2">
-              <button onClick={switchMode} className="rounded-md px-3 py-1.5 text-xs font-bold text-white" style={{ backgroundColor: currentSimpleMode ? "#1E7B45" : "#B45309" }}>
+              <button onClick={switchMode} className="rounded-md px-3 py-1.5 text-xs font-bold text-white" style={{ backgroundColor: currentSimpleMode ? "#4A6152" : "#8A5A2B" }}>
                 {currentSimpleMode ? "التحويل لوضع الصلاحيات الكامل" : "التحويل للوضع التجريبي المبسط"}
               </button>
-              <button onClick={disableCloud} className="rounded-md px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "#FFFFFF", color: "#C00000", border: "1px solid #C00000" }}>
+              <button onClick={disableCloud} className="rounded-md px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "#FFFFFF", color: "#A8322B", border: "1px solid #A8322B" }}>
                 تعطيل المزامنة والعودة للتخزين المحلي
               </button>
             </div>
@@ -3493,7 +3528,7 @@ alter publication supabase_realtime add table profiles;`;
             <Field label="Supabase anon public key">
               <input className="inp" placeholder="eyJhbGciOi..." value={sbKey} onChange={e => setSbKey(e.target.value)} />
             </Field>
-            <label className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#8A6D00", cursor: "pointer" }}>
+            <label className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#7A5E22", cursor: "pointer" }}>
               <input type="checkbox" className="mt-0.5" checked={wantSimpleMode} onChange={e => setWantSimpleMode(e.target.checked)} />
               <span>
                 <b>وضع تجريبي مبسط:</b> بدون تسجيل حسابات فردية ولا موافقة مالك — أي جهاز يفتح الرابط يدخل
@@ -3502,7 +3537,7 @@ alter publication supabase_realtime add table profiles;`;
               </span>
             </label>
             <div className="flex flex-wrap gap-2">
-              <button disabled={!sbUrl.trim() || !sbKey.trim()} onClick={enableCloud} className="rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: "#1E7B45" }}>
+              <button disabled={!sbUrl.trim() || !sbKey.trim()} onClick={enableCloud} className="rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: "#4A6152" }}>
                 تفعيل المزامنة السحابية
               </button>
               <button onClick={() => setShowSql(!showSql)} className="rounded-lg px-4 py-2 text-sm font-bold" style={{ border: `1px solid ${NAVY}`, color: NAVY }}>
@@ -3514,12 +3549,12 @@ alter publication supabase_realtime add table profiles;`;
                 <p className="mb-2 text-xs text-muted">
                   شغّل كود واحد بس حسب الوضع اللي هتفعّله (آمن تمامًا تكرر التشغيل لاحقًا لو غيّرت رأيك):
                 </p>
-                <p className="mb-1 text-xs font-bold" style={{ color: "#B45309" }}>الوضع التجريبي المبسط:</p>
-                <pre className="mb-3 overflow-x-auto rounded-lg p-3 text-xs" style={{ backgroundColor: "#1F1F1F", color: "#E5E7EB", direction: "ltr", textAlign: "left" }}>
+                <p className="mb-1 text-xs font-bold" style={{ color: "#8A5A2B" }}>الوضع التجريبي المبسط:</p>
+                <pre className="mb-3 overflow-x-auto rounded-lg p-3 text-xs" style={{ backgroundColor: "#1C1B19", color: "#E5E7EB", direction: "ltr", textAlign: "left" }}>
                   {SIMPLE_SQL_SCRIPT}
                 </pre>
-                <p className="mb-1 text-xs font-bold" style={{ color: "#1E7B45" }}>وضع الصلاحيات الكامل:</p>
-                <pre className="overflow-x-auto rounded-lg p-3 text-xs" style={{ backgroundColor: "#1F1F1F", color: "#E5E7EB", direction: "ltr", textAlign: "left" }}>
+                <p className="mb-1 text-xs font-bold" style={{ color: "#4A6152" }}>وضع الصلاحيات الكامل:</p>
+                <pre className="overflow-x-auto rounded-lg p-3 text-xs" style={{ backgroundColor: "#1C1B19", color: "#E5E7EB", direction: "ltr", textAlign: "left" }}>
                   {SQL_SCRIPT}
                 </pre>
               </div>
@@ -3532,7 +3567,7 @@ alter publication supabase_realtime add table profiles;`;
         <div className="mb-3 text-sm font-bold text-navy">فريق المكتب والصلاحيات</div>
 
         {currentSimpleMode ? (
-          <div className="flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#8A6D00" }}>
+          <div className="flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#7A5E22" }}>
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
             الصلاحيات متوقفة مؤقتًا في الوضع التجريبي المبسط — كل من يفتح الرابط له كل الصلاحيات تلقائيًا.
             فعّل "وضع الصلاحيات الكامل" من قسم المزامنة السحابية فوق لاستخدام حسابات فردية وموافقة الأعضاء.
@@ -3540,8 +3575,8 @@ alter publication supabase_realtime add table profiles;`;
         ) : (
         <>
         {cloud && can(currentMember, "manageTeam") && pendingMembers && pendingMembers.length > 0 && (
-          <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: "#FFF7E6" }}>
-            <div className="mb-2 text-xs font-bold" style={{ color: "#8A6D00" }}>طلبات انضمام بانتظار الموافقة ({pendingMembers.length})</div>
+          <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: "#FAF3E4" }}>
+            <div className="mb-2 text-xs font-bold" style={{ color: "#7A5E22" }}>طلبات انضمام بانتظار الموافقة ({pendingMembers.length})</div>
             <div className="flex flex-col gap-2">
               {pendingMembers.map(p => (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
@@ -3613,7 +3648,7 @@ alter publication supabase_realtime add table profiles;`;
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-3 h-section">هوية المكتب</div>
         {!(local.officeName || "").trim() && (
-          <div className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-5" style={{ backgroundColor: "#FFF7E6", color: "#8A6D00" }}>
+          <div className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-5" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
             <span>أدخل اسم مكتبك قبل تصدير أي عقد أو عرض للعميل — بدونه سيظهر اسم عام في المستندات.</span>
           </div>
@@ -3666,7 +3701,7 @@ alter publication supabase_realtime add table profiles;`;
             onKeyDown={e => { if (e.key === "Enter") onSave(local); }} />
         </Field>
         {!(local.agreedProfitPct > 0) && (
-          <div className="-mt-2 mb-3 text-[11px] leading-5" style={{ color: "#8A6D00" }}>
+          <div className="-mt-2 mb-3 text-[11px] leading-5" style={{ color: "#7A5E22" }}>
             بصفر، جدول التحصيل هيعرض قيمة المراحل بدون أي ربح للمكتب. ده رقمك أنت — النظام
             لا يخترعه، لأن عقدًا مبنيًا على نسبة لم يتفق عليها أحد أسوأ من عقد بلا نسبة.
             يمكن تجاوز هذه النسبة لكل عميل على حدة من صفحة المقايسة.
@@ -3707,8 +3742,8 @@ alter publication supabase_realtime add table profiles;`;
         هذه النسب تنعكس تلقائيًا على حساب كل عميل بمجرد الحفظ. البيانات محفوظة بشكل خاص، ولا يراها إلا من يستخدم هذا الجهاز والمتصفح.
       </div>
       <style>{`
-        .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid ${BORDER}; font-size: 13px; font-family: 'Cairo', Arial, sans-serif; }
-        .inp:focus { outline: 2px solid ${NAVY}; outline-offset: 0; }
+        .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 10px 2px; border: none; border-bottom: 1px solid #C9C6C0; border-radius: 0; background: transparent; font-size: 13.5px; font-family: inherit; color: #14110F; }
+        .inp:focus { outline: none; border-bottom: 2px solid #14110F; }
       `}</style>
     </div>
   );
@@ -3729,14 +3764,14 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.error) {
       return (
-        <div dir="rtl" style={{ fontFamily: "'Cairo', Arial, sans-serif", padding: 40, textAlign: "center", color: "#1F2937" }}>
-          <h2 style={{ color: "#C00000", marginBottom: 10 }}>حدث خطأ غير متوقع في التطبيق</h2>
-          <p style={{ color: "#6B7280", marginBottom: 16 }}>
+        <div style={{ padding: 40, textAlign: "center", color: "#1C1B19" }}>
+          <h2 style={{ color: "#A8322B", marginBottom: 10 }}>حدث خطأ غير متوقع في التطبيق</h2>
+          <p style={{ color: "#6E6A63", marginBottom: 16 }}>
             بياناتك محفوظة بأمان في المتصفح ولم تتأثر. حاول تحديث الصفحة، ولو استمرت المشكلة استخدم نسخة احتياطية سابقة من تبويب الإعدادات.
           </p>
           <button
             onClick={() => window.location.reload()}
-            style={{ backgroundColor: "#1F4E78", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: "bold", cursor: "pointer" }}
+            style={{ backgroundColor: "#A8553A", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: "bold", cursor: "pointer" }}
           >
             إعادة تحميل الصفحة
           </button>
@@ -3795,8 +3830,8 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
 
       <div className="overflow-x-auto">
       {drift.length > 0 && (
-        <div className="sheet mb-3 p-3" style={{ borderColor: "#BF9000" }}>
-          <div className="mb-2 text-xs font-bold" style={{ color: "#8A6D00" }}>
+        <div className="sheet mb-3 p-3" style={{ borderColor: "#B08A3E" }}>
+          <div className="mb-2 text-xs font-bold" style={{ color: "#7A5E22" }}>
             بنود تسعّرها فعليًا بغير سعر الكتالوج
           </div>
           {drift.slice(0, 6).map(d => (
@@ -3804,7 +3839,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
               <span className="code">{d.id}</span>
               <span className="font-semibold text-ink">{d.name}</span>
               <span className="num text-muted">
-                الكتالوج <b>{fmt(d.catalogue)}</b> · المعتاد لديك <b style={{ color: "#1E7B45" }}>{fmt(d.suggested)}</b>
+                الكتالوج <b>{fmt(d.catalogue)}</b> · المعتاد لديك <b style={{ color: "#4A6152" }}>{fmt(d.suggested)}</b>
                 {" "}({d.drift > 0 ? "+" : ""}{(d.drift * 100).toFixed(0)}% من {d.samples} مشاريع)
               </span>
             </div>
@@ -3834,7 +3869,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                   <td className="p-2">
                     <span className="block font-semibold leading-4">{name}</span>
                     <span className="code mt-0.5 inline-block">{id}</span>
-                    {stale.has(id) && <span className="mr-1 text-[9px]" style={{ color: "#B45309" }}>غير محدَّث</span>}
+                    {stale.has(id) && <span className="mr-1 text-[9px]" style={{ color: "#8A5A2B" }}>غير محدَّث</span>}
                   </td>
                   {LEVELS.map((lv, i) => (
                     <td key={lv} className="p-1 text-center">
@@ -3853,8 +3888,8 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                     {m.known ? (
                       <span
                         className="num font-bold"
-                        style={{ color: marginHealth(m.ratio, book.minMargin) === "ok" ? "#1E7B45"
-                               : marginHealth(m.ratio, book.minMargin) === "thin" ? "#B45309" : "#C00000" }}
+                        style={{ color: marginHealth(m.ratio, book.minMargin) === "ok" ? "#4A6152"
+                               : marginHealth(m.ratio, book.minMargin) === "thin" ? "#8A5A2B" : "#A8322B" }}
                       >
                         {(m.ratio * 100).toFixed(0)}%
                       </span>
@@ -3877,7 +3912,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                       </button>
                       {LEVELS.map((lv, i) => itemAnalysis(book, id, i) && (
                         <span key={lv} className="rounded-full px-2 py-0.5 text-[9px] font-bold"
-                              style={{ backgroundColor: "#E2EFDA", color: "#1E7B45" }}>
+                              style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>
                           {lv} محلَّل
                         </span>
                       ))}
@@ -3939,7 +3974,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                           const sell = prices[openAnalysis.levelIdx];
                           return (
                             <>
-                              <div className="mt-2 flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E3E7EE" }}>
+                              <div className="mt-2 flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E4DFD7" }}>
                                 {COST_KINDS.filter(k => (an[k] || 0) > 0).map(k => (
                                   <div key={k} title={KIND_LABEL[k]}
                                        style={{ width: `${shares[k] * 100}%`, backgroundColor: KIND_COLOR[k] }} />
@@ -3951,7 +3986,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                                     {KIND_SHORT[k]} {(shares[k] * 100).toFixed(0)}%
                                   </span>
                                 ))}
-                                <span className="font-bold" style={{ color: sell > total ? "#1E7B45" : "#C00000" }}>
+                                <span className="font-bold" style={{ color: sell > total ? "#4A6152" : "#A8322B" }}>
                                   الهامش {sell > 0 ? (((sell - total) / sell) * 100).toFixed(0) : 0}%
                                   {" "}({fmt(sell - total)} ج.م لكل {unit})
                                 </span>
@@ -3978,9 +4013,9 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
 
 function StorageUnsupported() {
   return (
-    <div dir="rtl" style={{ fontFamily: "'Cairo', Arial, sans-serif", padding: 40, textAlign: "center", color: "#1F2937" }}>
-      <h2 style={{ color: "#C00000", marginBottom: 10 }}>هذا المتصفح لا يدعم التخزين الدائم</h2>
-      <p style={{ color: "#6B7280" }}>
+    <div style={{ padding: 40, textAlign: "center", color: "#1C1B19" }}>
+      <h2 style={{ color: "#A8322B", marginBottom: 10 }}>هذا المتصفح لا يدعم التخزين الدائم</h2>
+      <p style={{ color: "#6E6A63" }}>
         يرجى فتح هذه الأداة من متصفح حديث (Chrome / Edge / Firefox / Safari) خارج وضع التصفح الخفي، لضمان حفظ بياناتك بشكل دائم.
       </p>
     </div>

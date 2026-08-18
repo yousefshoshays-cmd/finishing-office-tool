@@ -1,141 +1,250 @@
 @import "tailwindcss";
 
-/* ════════════════════════════════════════════════════════════════
-   هوية المكتب — مستمدة من مفردات المخطط المعماري نفسه:
-   كتلة العنوان، الخط الشعري، الزاوية الحادة، كود البند، ورق الشبكة.
-   مصدر واحد للحقيقة: تغيير اللون هنا ينعكس على كل الواجهة.
-   ════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   الهوية البصرية — لغة المكاتب المعمارية العالمية
+   ------------------------------------------------------------------------
+   المرجع الذي أرسلته (BIG) لا يبدو محترفًا بسبب لون أو زخرفة، بل بسبب
+   أربعة قرارات يمكن نقلها دون تقليد أي شكل:
+
+     ١· الورقة بيضاء والفراغ سخي — لا بطاقات ملوّنة ولا ظلال.
+     ٢· الفصل بخط شَعري (١ بكسل) لا بمساحة لون.
+     ٣· البيانات تُقرأ كـ«ركن مخطط»: تسمية صغيرة جدًا فوق قيمة أكبر منها.
+     ٤· اللون يأتي من الصور وحدها.
+
+   الخط: IBM Plex Sans Arabic — مستضاف داخل الموقع (مجلد fonts)، فلا يعتمد
+   على Google Fonts ولا على أي رابط خارجي، ويعمل بلا إنترنت.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── الخط المستضاف محليًا ── */
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:300;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-arabic-300-normal.woff2") format("woff2");
+  unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0898-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:300;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-latin-300-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2") format("woff2");
+  unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0898-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-latin-400-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2") format("woff2");
+  unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0898-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-latin-500-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2") format("woff2");
+  unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0898-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-latin-600-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2") format("woff2");
+  unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0898-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC}
+@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;
+  src:url("./fonts/ibm-plex-sans-arabic-latin-700-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
 @theme {
-  /* ── الهوية المعمارية: حيادي دافئ + لون واحد مميّز ──
-     الكحلي والذهبي كانا يتنافسان على الانتباه فيتشتّت النظر.
-     هنا لون واحد (الطين) يحمل التمييز، والباقي حياد يخدمه.
-     الأسماء القديمة (navy/gold) مبقاة عمدًا فلا ينكسر أي سطر
-     يستدعيها — لكن قيمها صارت الهوية الجديدة. */
-  --color-navy:      #A8553A;   /* الطين — اللون المميّز */
-  --color-navy-dark: #8A422C;   /* طين غامق */
-  --color-gold:      #B08A3E;   /* نحاس — للتنبيه والقيم المالية */
-  --color-gold-ink:  #7A5E22;
+  /* ── حياد شبه مطلق: اللون يأتي من الصور ──
+     الأسماء القديمة (navy/gold) مبقاة عمدًا فلا ينكسر أي سطر يستدعيها،
+     وقيمها وحدها هي التي تغيّرت. */
+  --color-navy:      #14110F;   /* حبر — كان طينًا، والطين كان يصرخ */
+  --color-navy-dark: #000000;
+  --color-gold:      #8C5A2B;   /* نحاس مكتوم — للقيم المالية وحدها */
+  --color-gold-ink:  #6B451F;
 
   --color-clay:      #A8553A;
-  --color-sage:      #4A6152;   /* نجاح واعتماد */
-  --color-danger:    #A8322B;
-  --color-stone:     #E8E4DE;   /* حجر */
+  --color-sage:      #3F5B49;
+  --color-danger:    #9E2B22;
+  --color-stone:     #EDEBE7;
 
-  /* ورق دافئ لا أبيض صارخ — أقرب لورق الرسم المعماري */
-  --color-light:     #F4F1EC;
-  --color-line:      #E4DFD7;   /* خط شعري */
-  --color-line-firm: #CFC7BB;   /* خط قاطع */
-  --color-ink:       #1C1B19;   /* حبر، لا أسود مطلق */
-  --color-muted:     #6E6A63;
+  --color-light:     #FFFFFF;   /* الورقة بيضاء */
+  --color-line:      #E2E0DC;   /* خط شَعري */
+  --color-line-firm: #C9C6C0;
+  --color-ink:       #14110F;
+  --color-muted:     #83807A;
 
-  --font-sans: "Cairo", Arial, sans-serif;
+  --font-sans: "Plex Arabic", "IBM Plex Sans Arabic", -apple-system, Segoe UI, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --radius-sharp: 2px;
+  --radius-sharp: 0px;
+}
+
+@layer base {
+  body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 }
 
 @layer components {
-  /* ── السطح الأساسي: خط شعري بدل الظل، زاوية شبه حادة ── */
+
+  /* ═══ السطح: بلا ظل، بلا زاوية دائرية، بلا لون خلفية ═══ */
   .sheet {
-    background-color: #FDFCFA;
+    background-color: #FFFFFF;
     border: 1px solid var(--color-line);
-    border-radius: 10px;          /* الزاوية الحادة كانت تُشعر بالجفاف */
+    border-radius: 0;
   }
 
-  /* ── كتلة العنوان: العنصر المميّز، مقتبس من ركن المخطط ──
-     شريط مقسّم لخانات بخطوط فاصلة، يحمل بيانات المشروع الأساسية. */
-  .titleblock {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-top: 2px solid var(--color-navy);
-    border-bottom: 1px solid var(--color-line);
-  }
-  .titleblock > div {
-    padding: 6px 8px;
-    border-inline-start: 1px solid var(--color-line);
-  }
-  .titleblock > div:first-child { border-inline-start: none; }
-  .tb-label {
+  /* ═══ ركن المخطط: تسمية صغيرة فوق قيمة ═══
+     هذا هو العنصر الذي يجعل الشاشة تُقرأ كوثيقة مكتب معماري.
+     التباعد بين الحروف يُطبَّق على اللاتيني فقط — تباعد الحروف
+     العربية يكسر الوصل بينها. */
+  .eyebrow {
     display: block;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
+    font-size: 9.5px;
+    font-weight: 500;
+    line-height: 1.7;
     color: var(--color-muted);
-    margin-bottom: 1px;
+    text-transform: uppercase;
   }
-  .tb-value {
+  [lang="en"] .eyebrow { letter-spacing: 0.16em; }
+
+  .metaval {
     display: block;
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 600;
+    line-height: 1.6;
     color: var(--color-ink);
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── كود البند: بخط تقني، كما يظهر في جداول الكميات ── */
+  .metagrid { display: grid; gap: 0; border-top: 1px solid var(--color-ink); }
+  .metagrid > div { padding: 9px 0 11px; border-bottom: 1px solid var(--color-line); }
+
+  /* توافق خلفي مع النمط القديم */
+  .titleblock {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-top: 1px solid var(--color-ink);
+    border-bottom: 1px solid var(--color-line);
+  }
+  .titleblock > div { padding: 9px 12px; border-inline-start: 1px solid var(--color-line); }
+  .titleblock > div:first-child { border-inline-start: none; }
+  .tb-label { display:block; font-size:9.5px; font-weight:500; color:var(--color-muted); text-transform:uppercase; margin-bottom:2px; }
+  .tb-value { display:block; font-size:13.5px; font-weight:600; color:var(--color-ink); font-variant-numeric:tabular-nums; }
+
   .code {
     font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    color: var(--color-muted);
-    background: var(--color-light);
-    border: 1px solid var(--color-line);
-    border-radius: 2px;
-    padding: 1px 4px;
-    white-space: nowrap;
+    font-size: 10px; letter-spacing: 0.04em; color: var(--color-muted);
+    background: transparent; border: none; padding: 0; white-space: nowrap;
   }
 
-  /* ── ورق الشبكة خلف الرسوم ── */
-  .gridpaper {
-    background-image:
-      linear-gradient(var(--color-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
-    background-size: 24px 24px;
-    background-position: -1px -1px;
+  .gridpaper { background-image: none; }
+
+  /* ═══ السلّم الطباعي ═══
+     العناوين خفيفة وكبيرة، لا ثقيلة وصغيرة. الوزن ٩٠٠ في كل مكان
+     كان أكثر ما يجعل الواجهة تبدو هاوية. */
+  .h-page {
+    font-size: clamp(26px, 3.4vw, 40px);
+    font-weight: 400; letter-spacing: -0.02em; line-height: 1.32;
+    color: var(--color-ink);
   }
+  .h-section {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--color-ink);
+  }
+  [lang="en"] .h-section { letter-spacing: 0.14em; }
 
-  /* ── سلّم طباعي واضح: الرزانة لا الصياح ── */
-  .h-page    { font-size: 24px; font-weight: 900; letter-spacing: -0.01em; color: var(--color-ink); }
-  .h-section { font-size: 15.5px; font-weight: 800; color: var(--color-ink); }
-
-  /* ── شريط الأقسام الثلاثة ── */
+  /* ═══ التنقّل: نص عارٍ، لا أقراص ملوّنة ═══ */
   .navsec {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 18px; border-radius: 10px; min-height: 46px;
-    font-size: 14px; font-weight: 800; white-space: nowrap;
-    transition: background-color .15s, color .15s;
+    padding: 14px 0; margin-inline-end: 30px; min-height: 44px;
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+    background: transparent !important;
+    border-bottom: 2px solid transparent;
+    text-transform: uppercase;
+    transition: color .15s, border-color .15s;
   }
+  [lang="en"] .navsec { letter-spacing: 0.12em; }
+  .navsec[aria-current="page"] { border-bottom-color: currentColor; }
+
   .navsub {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 13px; border-radius: 8px; min-height: 40px;
-    font-size: 12.5px; font-weight: 700; white-space: nowrap;
+    padding: 11px 0; margin-inline-end: 24px; min-height: 42px;
+    font-size: 11.5px; font-weight: 500; white-space: nowrap;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid transparent !important;
+    color: var(--color-muted);
+    transition: color .15s;
   }
-  .lbl       { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--color-muted); }
-  .num       { font-variant-numeric: tabular-nums; }
+  .navsub[aria-current="page"] { color: var(--color-ink) !important; border-bottom-color: var(--color-ink) !important; }
 
-  /* ── أزرار ── */
-  /* ── أزرار: ٤٤ بكسل هو الحد الآمن للمس على الهاتف ── */
+  .lbl { font-size: 9.5px; font-weight: 500; color: var(--color-muted); text-transform: uppercase; }
+  [lang="en"] .lbl { letter-spacing: 0.14em; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  /* ═══ الأزرار: مستطيلة، بلا انحناء، نص صغير ═══ */
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    border-radius: 8px; padding: 11px 16px; min-height: 44px;
-    font-size: 13.5px; font-weight: 700;
-    transition: filter .15s, opacity .15s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border-radius: 0; padding: 12px 20px; min-height: 44px;
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    border: 1px solid var(--color-line-firm);
+    background: #FFFFFF; color: var(--color-ink);
+    transition: background-color .15s, color .15s, border-color .15s;
   }
-  .btn:hover:not(:disabled) { filter: brightness(1.08); }
-  .btn:hover:not(:disabled) { opacity: .85; }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn-primary { background-color: var(--color-navy); color: #FFFFFF; }
-  .btn-gold    { background-color: var(--color-gold); color: #1F1F1F; }
+  [lang="en"] .btn { letter-spacing: 0.1em; }
+  .btn:hover:not(:disabled) { filter: none; opacity: 1; background: var(--color-ink); color: #FFFFFF; border-color: var(--color-ink); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary { background-color: var(--color-ink); color: #FFFFFF; border-color: var(--color-ink); }
+  .btn-primary:hover:not(:disabled) { background-color: #FFFFFF; color: var(--color-ink); }
+  .btn-gold { background-color: #FFFFFF; color: var(--color-gold-ink); border-color: var(--color-gold); }
+  .btn-gold:hover:not(:disabled) { background-color: var(--color-gold); color: #FFFFFF; }
 
-  /* ── حقول الإدخال ── */
+  /* ═══ الحقول: خط سفلي فقط — أهدأ من صندوق كامل ═══ */
   .inp {
     width: 100%;
-    border: 1px solid var(--color-line-firm);
-    border-radius: 8px;
-    padding: 10px 12px;
-    min-height: 42px;
-    font-size: 13.5px;
-    background: #FFFFFF;
+    border: none; border-bottom: 1px solid var(--color-line-firm);
+    border-radius: 0; padding: 10px 2px; min-height: 42px;
+    font-size: 13.5px; background: transparent; color: var(--color-ink);
   }
-  .inp:focus { outline: 2px solid var(--color-clay); outline-offset: -1px; }
-  .field-locked { background-color: var(--color-light); cursor: not-allowed; }
+  .inp:focus { outline: none; border-bottom-color: var(--color-ink); border-bottom-width: 2px; }
+  .field-locked { background-color: transparent; color: var(--color-muted); cursor: not-allowed; }
+
+  /* ═══ الصورة: بطلة الواجهة ═══ */
+  .frame { position: relative; overflow: hidden; background: var(--color-stone); }
+  .frame img { width: 100%; height: 100%; object-fit: cover; display: block;
+                transition: transform .7s cubic-bezier(.2,.7,.3,1); }
+  .frame:hover img { transform: scale(1.035); }
+
+  /* حقل فارغ لمشروع بلا صورة: حياد نظيف + دعوة للرفع، لا رسم مصطنع */
+  .plate {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    background: repeating-linear-gradient(135deg, #F2F0ED 0 14px, #ECEAE6 14px 28px);
+    color: var(--color-muted);
+  }
+
+  .stagebar {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; color: #FFFFFF;
+  }
+  [lang="en"] .stagebar { letter-spacing: 0.14em; }
+  .stagedot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+  table.editorial { width: 100%; border-collapse: collapse; }
+  table.editorial th {
+    font-size: 9.5px; font-weight: 500; text-transform: uppercase; color: var(--color-muted);
+    border-bottom: 1px solid var(--color-ink); padding: 8px 10px; background: transparent;
+  }
+  table.editorial td { border-bottom: 1px solid var(--color-line); padding: 10px; font-size: 13px; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   تحييد شامل: الهوية الجديدة لا تعرف زوايا دائرية ولا ظلالًا
+   ------------------------------------------------------------------------
+   في الشاشات العميقة ٨٩ موضعًا تستدعي rounded-* و shadow-* مباشرة.
+   تعديلها سطرًا سطرًا يفتح ٨٩ فرصة لخطأ، والتحييد هنا يفعلها دفعة واحدة
+   ويترك النقاط الدائرية (rounded-full) على حالها لأنها فعلًا دوائر.
+   ════════════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  .rounded, .rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl,
+  .rounded-t, .rounded-t-lg, .rounded-t-xl, .rounded-b, .rounded-b-lg, .rounded-b-xl { border-radius: 0 !important; }
+  .shadow-xs, .shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl { box-shadow: none !important; }
+  .hover\:shadow-md:hover, .hover\:shadow-lg:hover { box-shadow: none !important; }
+}
+
+@layer base {
+  /* مربّعات الاختيار بلون الحبر لا بالأزرق الافتراضي للمتصفح */
+  input[type="checkbox"], input[type="radio"] { accent-color: #14110F; }
 }
