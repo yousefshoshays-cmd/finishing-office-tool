@@ -6,17 +6,27 @@
    مصدر واحد للحقيقة: تغيير اللون هنا ينعكس على كل الواجهة.
    ════════════════════════════════════════════════════════════════ */
 @theme {
-  --color-navy:      #1F4E78;
-  --color-navy-dark: #163A57;
-  --color-gold:      #BF9000;
-  --color-gold-ink:  #8A6D00;
+  /* ── الهوية المعمارية: حيادي دافئ + لون واحد مميّز ──
+     الكحلي والذهبي كانا يتنافسان على الانتباه فيتشتّت النظر.
+     هنا لون واحد (الطين) يحمل التمييز، والباقي حياد يخدمه.
+     الأسماء القديمة (navy/gold) مبقاة عمدًا فلا ينكسر أي سطر
+     يستدعيها — لكن قيمها صارت الهوية الجديدة. */
+  --color-navy:      #A8553A;   /* الطين — اللون المميّز */
+  --color-navy-dark: #8A422C;   /* طين غامق */
+  --color-gold:      #B08A3E;   /* نحاس — للتنبيه والقيم المالية */
+  --color-gold-ink:  #7A5E22;
 
-  /* ورق المخطط: أبيض دافئ لا أزرق رمادي — أقرب لورق الرسم */
-  --color-light:     #FAFAF7;
-  --color-line:      #DFE1DE;   /* خط شعري */
-  --color-line-firm: #B9BDB8;   /* خط قاطع */
-  --color-ink:       #24282E;   /* جرافيت، لا أسود */
-  --color-muted:     #6E7378;
+  --color-clay:      #A8553A;
+  --color-sage:      #4A6152;   /* نجاح واعتماد */
+  --color-danger:    #A8322B;
+  --color-stone:     #E8E4DE;   /* حجر */
+
+  /* ورق دافئ لا أبيض صارخ — أقرب لورق الرسم المعماري */
+  --color-light:     #F4F1EC;
+  --color-line:      #E4DFD7;   /* خط شعري */
+  --color-line-firm: #CFC7BB;   /* خط قاطع */
+  --color-ink:       #1C1B19;   /* حبر، لا أسود مطلق */
+  --color-muted:     #6E6A63;
 
   --font-sans: "Cairo", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -27,9 +37,9 @@
 @layer components {
   /* ── السطح الأساسي: خط شعري بدل الظل، زاوية شبه حادة ── */
   .sheet {
-    background-color: #FFFFFF;
+    background-color: #FDFCFA;
     border: 1px solid var(--color-line);
-    border-radius: 2px;
+    border-radius: 10px;          /* الزاوية الحادة كانت تُشعر بالجفاف */
   }
 
   /* ── كتلة العنوان: العنصر المميّز، مقتبس من ركن المخطط ──
@@ -84,18 +94,33 @@
   }
 
   /* ── سلّم طباعي واضح: الرزانة لا الصياح ── */
-  .h-page    { font-size: 22px; font-weight: 300; letter-spacing: 0.01em; color: var(--color-navy); }
-  .h-section { font-size: 15px; font-weight: 600; color: var(--color-navy); }
+  .h-page    { font-size: 24px; font-weight: 900; letter-spacing: -0.01em; color: var(--color-ink); }
+  .h-section { font-size: 15.5px; font-weight: 800; color: var(--color-ink); }
+
+  /* ── شريط الأقسام الثلاثة ── */
+  .navsec {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 10px; min-height: 46px;
+    font-size: 14px; font-weight: 800; white-space: nowrap;
+    transition: background-color .15s, color .15s;
+  }
+  .navsub {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 13px; border-radius: 8px; min-height: 40px;
+    font-size: 12.5px; font-weight: 700; white-space: nowrap;
+  }
   .lbl       { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--color-muted); }
   .num       { font-variant-numeric: tabular-nums; }
 
   /* ── أزرار ── */
+  /* ── أزرار: ٤٤ بكسل هو الحد الآمن للمس على الهاتف ── */
   .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    border-radius: 2px; padding: 8px 14px;
-    font-size: 13px; font-weight: 600;
-    transition: opacity .15s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    border-radius: 8px; padding: 11px 16px; min-height: 44px;
+    font-size: 13.5px; font-weight: 700;
+    transition: filter .15s, opacity .15s;
   }
+  .btn:hover:not(:disabled) { filter: brightness(1.08); }
   .btn:hover:not(:disabled) { opacity: .85; }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
   .btn-primary { background-color: var(--color-navy); color: #FFFFFF; }
@@ -104,12 +129,13 @@
   /* ── حقول الإدخال ── */
   .inp {
     width: 100%;
-    border: 1px solid var(--color-line);
-    border-radius: 2px;
-    padding: 8px 10px;
-    font-size: 13px;
+    border: 1px solid var(--color-line-firm);
+    border-radius: 8px;
+    padding: 10px 12px;
+    min-height: 42px;
+    font-size: 13.5px;
     background: #FFFFFF;
   }
-  .inp:focus { outline: 2px solid var(--color-navy); outline-offset: -1px; }
+  .inp:focus { outline: 2px solid var(--color-clay); outline-offset: -1px; }
   .field-locked { background-color: var(--color-light); cursor: not-allowed; }
 }

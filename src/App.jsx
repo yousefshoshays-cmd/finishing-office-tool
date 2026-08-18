@@ -43,7 +43,11 @@ import {
   NAVY, NAVY_DARK, GOLD, LIGHT, BORDER, TEXT, MUTED,
   LEVELS, LEVEL_COLORS, SCOPES, STAGES, STAGE_COLORS,
   PHASES, PHASE_COLORS, PHASE_SHORT,
+  SECTIONS, CLAY, CLAY_DARK, SAGE, COPPER, DANGER, INK, PAPER, STONE,
 } from "./ui/tokens.js";
+
+/* الشاشة الافتتاحية لكل قسم — الضغط على القسم يفتحها مباشرة */
+const SECTION_HOME = { office: "dashboard", clients: "clients", contractors: "contractors" };
 /* مكتبات التصدير (exceljs / docx / pptxgenjs) تزن أكثر من 1.3 ميجابايت مجتمعة.
    تُحمَّل الآن عند أول ضغطة على زر تصدير فقط، لا عند فتح التطبيق. */
 const loadDocx  = () => import("./export/docx.js");
@@ -457,12 +461,30 @@ function MonthlyTrendChart({ clients, settings }) {
 }
 
 /* ============================= App ============================= */
+/* تبويبات كل قسم — تُبنى من الصلاحية والحالة لا من قائمة ثابتة */
+function buildSubTabs(section, currentMember, license, isAdmin) {
+  if (section === "office") {
+    return [
+      { key: "dashboard", label: "لوحة المتابعة", Icon: LayoutDashboard },
+      ...(can(currentMember, "viewCostBasis")
+        ? [{ key: "pricebook", label: "دفتر الأسعار", Icon: Ruler }] : []),
+      { key: "settings", label: "الإعدادات", Icon: Settings },
+      ...(license?.loaded && license.status !== "local"
+        ? [{ key: "billing", label: "الاشتراك", Icon: CreditCard }] : []),
+      ...(isAdmin ? [{ key: "admin", label: "إدارة المنصّة", Icon: ShieldCheck }] : []),
+    ];
+  }
+  if (section === "clients") return [{ key: "clients", label: "كل العملاء", Icon: Users }];
+  return [{ key: "contractors", label: "سجل المقاولين", Icon: Ruler }];
+}
+
 function AppInner() {
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [priceBook, setPriceBook] = useState(DEFAULT_PRICEBOOK);
-  const [tab, setTab] = useState("dashboard"); // dashboard | clients | pricebook | settings
+  const [tab, setTab] = useState("dashboard");
+  const [section, setSection] = useState("office");   // office | clients | contractors
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -637,7 +659,7 @@ function AppInner() {
     setSelectedId(null);
     setLicense(LICENSE_UNKNOWN);
     setIsAdmin(false);
-    setTab("dashboard");
+    setTab("dashboard"); setSection("office");
     if (cloud) {
       const sb = getSupabase();
       await sb.auth.signOut();
@@ -723,7 +745,7 @@ function AppInner() {
     setClients(prev => [c, ...prev]);
     await saveClient(c);
     setSelectedId(c.id);
-    setTab("clients");
+    setTab("clients"); setSection("clients");
     showToast(template ? `عميل جديد من قالب "${template.name}"` : "تمت إضافة عميل جديد");
   };
 
@@ -870,24 +892,29 @@ function AppInner() {
       : <IdentityGate team={team} onAddMember={addTeamMember} onSignIn={signIn} />;
   }
 
+  /* تبويبات القسم الحالي — حساب عادي لا خطّاف:
+     هذا الموضع يقع بعد return مبكّر، ووضع useMemo هنا يخالف قواعد
+     الخطّافات ويُسقط التطبيق لحظة تسجيل الدخول. */
+  const subTabs = buildSubTabs(section, currentMember, license, isAdmin);
+
   return (
     <div dir="rtl" className="min-h-[700px] w-full" style={{ fontFamily: "'Cairo', Arial, sans-serif", backgroundColor: LIGHT, color: TEXT }}>
       {/* Header */}
       <div className="flex flex-col gap-3 px-4 py-3 bg-navy sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="truncate text-base font-bold text-white sm:text-lg">نظام متابعة العملاء والتسعير</div>
-          <div className="truncate text-xs" style={{ color: "#AEB9C6" }}>{officeLine(settings)}</div>
+          <div className="truncate text-xs" style={{ color: "#EBD9CE" }}>{officeLine(settings)}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: simpleMode ? "#B45309" : cloud ? "#1E7B45" : "#4B5563", color: "#FFFFFF" }}>
+          <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: simpleMode ? DANGER : cloud ? SAGE : "rgba(255,255,255,.16)", color: "#FFFFFF" }}>
             <Wifi size={12} /> {simpleMode ? "وضع تجريبي مبسط (بدون صلاحيات)" : cloud ? "مزامنة سحابية مفعّلة" : "محلي (بدون مزامنة)"}
           </span>
           {simpleMode ? (
-            <span className="rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: NAVY_DARK, color: "#D9E1F2" }}>
+            <span className="rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: "rgba(0,0,0,.22)", color: "#F2EBE2" }}>
               {currentMember.name}
             </span>
           ) : (
-            <button onClick={signOut} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: NAVY_DARK, color: "#D9E1F2" }}>
+            <button onClick={signOut} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: "rgba(0,0,0,.22)", color: "#F2EBE2" }}>
               <span className="rounded-full px-2 py-0.5 font-bold" style={{ backgroundColor: (ROLES[currentMember.role] || ROLES.engineer).color, color: (ROLES[currentMember.role] || ROLES.engineer).textOn }}>
                 {roleLabel(currentMember.role)}
               </span>
@@ -895,30 +922,56 @@ function AppInner() {
             </button>
           )}
         </div>
-        <nav className="-mx-1 flex gap-1 overflow-x-auto rounded-lg p-1 lg:mx-0 lg:overflow-visible" style={{ backgroundColor: NAVY_DARK, scrollbarWidth: "none" }}>
-          {[
-            ["dashboard", "لوحة المتابعة", LayoutDashboard],
-            ["clients", "العملاء", Users],
-            ...(can(currentMember, "viewCostBasis") ? [["pricebook", "دفتر الأسعار", Ruler]] : []),
-            ["settings", "الإعدادات", Settings],
-            ...(license.loaded && license.status !== "local" ? [["billing", "الاشتراك", CreditCard]] : []),
-            ...(isAdmin ? [["admin", "إدارة المنصّة", ShieldCheck]] : []),
-          ].map(([key, label, Icon]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-semibold transition-colors sm:px-3 sm:py-1.5 sm:text-sm"
-              style={{
-                backgroundColor: tab === key ? GOLD : "transparent",
-                color: tab === key ? "#1F1F1F" : "#D9E1F2",
-              }}
-            >
-              <Icon size={15} />
-              {label}
-            </button>
-          ))}
+        {/* ═══ الأقسام الثلاثة ═══
+            بدل شريط واحد يكدّس كل شيء، ثلاثة أقسام لكلٍّ منطقه:
+            المكتب يُدار، والعملاء يُتابَعون، والمقاولون طرف له حساباته. */}
+        <nav className="-mx-1 flex gap-1.5 overflow-x-auto px-1 lg:mx-0 lg:overflow-visible"
+             style={{ scrollbarWidth: "none" }} aria-label="الأقسام الرئيسية">
+          {SECTIONS.map(({ key, label }) => {
+            const Icon = { office: LayoutDashboard, clients: Users, contractors: Ruler }[key];
+            const active = section === key;
+            return (
+              <button
+                key={key}
+                onClick={() => { setSection(key); setTab(SECTION_HOME[key]); }}
+                aria-current={active ? "page" : undefined}
+                className="navsec shrink-0"
+                style={{
+                  backgroundColor: active ? "#FDFCFA" : "rgba(255,255,255,.10)",
+                  color: active ? INK : "#E9E3DA",
+                }}
+              >
+                <Icon size={16} />
+                {label}
+              </button>
+            );
+          })}
         </nav>
       </div>
+
+      {/* ═══ تبويبات القسم الحالي ═══ */}
+      {subTabs.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto border-b px-3 py-2 sm:px-6"
+             style={{ backgroundColor: "#FDFCFA", borderColor: BORDER, scrollbarWidth: "none" }}
+             aria-label="أقسام فرعية">
+          {subTabs.map(({ key, label, Icon }) => {
+            const active = tab === key;
+            return (
+              <button key={key} onClick={() => setTab(key)}
+                aria-current={active ? "page" : undefined}
+                className="navsub shrink-0"
+                style={{
+                  backgroundColor: active ? CLAY : "transparent",
+                  color: active ? "#FFFFFF" : MUTED,
+                  border: `1px solid ${active ? CLAY : BORDER}`,
+                }}>
+                {Icon && <Icon size={14} />}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {toast && (
         <div className="fixed left-1/2 top-4 z-50 max-w-[92vw] -translate-x-1/2 rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-lg" style={{ backgroundColor: "#1E7B45" }}>
@@ -951,11 +1004,11 @@ function AppInner() {
         onCancel={() => setConfirmState(null)}
       />
 
-      <LicenseBanner license={license} onUpgrade={() => setTab("billing")} />
+      <LicenseBanner license={license} onUpgrade={() => { setTab("billing"); setSection("office"); }} />
 
       <div className="p-3 sm:p-6">
         {tab === "dashboard" && (
-          <Dashboard stats={pipelineStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); }} />
+          <Dashboard stats={pipelineStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); setSection("clients"); }} />
         )}
 
         {tab === "clients" && !selected && (
@@ -1013,6 +1066,14 @@ function AppInner() {
           </React.Suspense>
         )}
 
+        {tab === "contractors" && (
+          <ContractorsRegistry
+            clients={visibleClients}
+            currentMember={currentMember}
+            onOpenClient={(id) => { setSelectedId(id); setTab("clients"); setSection("clients"); }}
+          />
+        )}
+
         {tab === "settings" && (
           <SettingsPanel
             settings={settings} onSave={saveSettings}
@@ -1038,7 +1099,7 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
       <div className="mb-6 flex items-center justify-between rounded-2xl p-5 bg-navy">
         <div>
           <h2 className="text-xl font-bold text-white">نظرة عامة على خط العملاء</h2>
-          <p className="mt-0.5 text-xs" style={{ color: "#AEB9C6" }}>لوحة متابعة شاملة لأداء المكتب</p>
+          <p className="mt-0.5 text-xs" style={{ color: "#EBD9CE" }}>لوحة متابعة شاملة لأداء المكتب</p>
         </div>
         <button onClick={onAdd} className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-bold shadow-sm" style={{ backgroundColor: GOLD, color: "#1F1F1F" }}>
           <Plus size={16} /> عميل جديد
@@ -2082,6 +2143,139 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════ سجل المقاولين عبر كل المشاريع ═══════════════════
+   المقاول الواحد يعمل غالبًا في أكثر من مشروع، وحساباته كانت مبعثرة
+   داخل صفحة كل عميل. هنا يُجمَع بالاسم: كم تعاقد معه إجمالًا، وكم صُرف،
+   وكم محتجز لديك، وأين تجاوز. هذا سؤال المكتب لا سؤال المشروع. */
+export function ContractorsRegistry({ clients, currentMember, onOpenClient }) {
+  const [q, setQ] = useState("");
+  const maySeeCost = can(currentMember, "viewCostBasis");
+
+  const registry = useMemo(() => {
+    const byName = new Map();
+    for (const c of clients || []) {
+      const led = contractorLedger(c);
+      for (const k of led.rows) {
+        const key = (k.name || "").trim() || k.id;
+        if (!byName.has(key)) {
+          byName.set(key, {
+            name: key, trades: new Set(), projects: [],
+            contracted: 0, paid: 0, retained: 0, certified: 0, remaining: 0, overCount: 0,
+          });
+        }
+        const r = byName.get(key);
+        if (k.trade) r.trades.add(k.trade);
+        r.projects.push({ clientId: c.id, clientName: c.name || "بدون اسم", phase: k.phase, ...k });
+        r.contracted += k.contractValue; r.paid += k.paid;
+        r.retained += k.retained; r.certified += k.certified; r.remaining += k.remaining;
+        if (k.overCertified) r.overCount++;
+      }
+    }
+    return [...byName.values()].sort((a, b) => b.contracted - a.contracted);
+  }, [clients]);
+
+  const totals = registry.reduce((t, r) => ({
+    contracted: t.contracted + r.contracted, paid: t.paid + r.paid,
+    retained: t.retained + r.retained, remaining: t.remaining + r.remaining,
+  }), { contracted: 0, paid: 0, retained: 0, remaining: 0 });
+
+  const visible = registry.filter(r =>
+    !q.trim() || r.name.includes(q.trim()) || [...r.trades].some(t => t.includes(q.trim())));
+
+  if (!maySeeCost) {
+    return <div className="sheet p-6 text-center text-sm text-muted">
+      حسابات المقاولين متاحة لمالك المكتب أو مدير المشاريع فقط.
+    </div>;
+  }
+
+  return (
+    <div>
+      <div className="mb-4">
+        <div className="h-page">المقاولون</div>
+        <div className="text-xs text-muted">حسابات مقاولي الباطن مجمّعة عبر كل مشاريع المكتب</div>
+      </div>
+
+      {registry.length === 0 ? (
+        <div className="sheet p-8 text-center">
+          <div className="text-sm font-bold" style={{ color: INK }}>لا يوجد مقاولون مسجّلون بعد</div>
+          <div className="mt-1 text-xs text-muted">
+            أضف المقاول من تبويب «المالية» داخل صفحة العميل، وسيظهر هنا مجمّعًا عبر كل مشاريعه.
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[["قيمة التعاقدات", totals.contracted, CLAY],
+              ["المصروف", totals.paid, INK],
+              ["محتجز الضمان", totals.retained, COPPER],
+              ["المتبقي لهم", totals.remaining, SAGE]].map(([lbl, val, col]) => (
+              <div key={lbl} className="sheet p-3 text-center">
+                <div className="lbl">{lbl}</div>
+                <div className="num text-lg font-bold" style={{ color: col }}>{fmt(val)}</div>
+              </div>
+            ))}
+          </div>
+
+          <input className="inp mb-3" placeholder="بحث بالاسم أو الصنعة…"
+                 value={q} onChange={e => setQ(e.target.value)} />
+
+          <div className="flex flex-col gap-2">
+            {visible.map(r => (
+              <div key={r.name} className="sheet p-4"
+                   style={{ borderColor: r.overCount > 0 ? DANGER : undefined }}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <span className="text-sm font-bold" style={{ color: INK }}>{r.name}</span>
+                    {r.trades.size > 0 && (
+                      <span className="mr-2 text-[11px] text-muted">{[...r.trades].join(" · ")}</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-muted">
+                    {r.projects.length} {r.projects.length === 1 ? "مشروع" : "مشاريع"}
+                  </span>
+                </div>
+
+                <div className="mt-2 h-1.5 w-full" style={{ backgroundColor: STONE }}>
+                  <div style={{ height: 6, backgroundColor: r.overCount > 0 ? DANGER : SAGE,
+                                width: `${r.contracted > 0 ? Math.min(100, (r.certified / r.contracted) * 100) : 0}%` }} />
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                  <span className="text-muted">تعاقد <b className="num">{fmt(r.contracted)}</b></span>
+                  <span className="text-muted">مصروف <b className="num">{fmt(r.paid)}</b></span>
+                  <span style={{ color: COPPER }}>محتجز <b className="num">{fmt(r.retained)}</b></span>
+                  <span style={{ color: r.remaining < 0 ? DANGER : SAGE }}>
+                    متبقٍ <b className="num">{fmt(r.remaining)}</b>
+                  </span>
+                </div>
+
+                {r.overCount > 0 && (
+                  <div className="mt-1.5 text-[11px] font-bold" style={{ color: DANGER }}>
+                    ⛔ تجاوز قيمة التعاقد في {r.overCount} {r.overCount === 1 ? "مشروع" : "مشاريع"}
+                  </div>
+                )}
+
+                <div className="mt-2 flex flex-wrap gap-1.5 border-t pt-2" style={{ borderColor: BORDER }}>
+                  {r.projects.map((p, i) => (
+                    <button key={i} onClick={() => onOpenClient(p.clientId)}
+                            className="rounded-md px-2.5 py-1 text-[11px] font-semibold"
+                            style={{ border: `1px solid ${BORDER}`, color: CLAY }}>
+                      {p.clientName}
+                      {p.phase && <span className="mr-1 text-muted">· {PHASE_SHORT[p.phase] || p.phase}</span>}
+                      <span className="num mr-1.5" style={{ color: p.overCertified ? DANGER : MUTED }}>
+                        {fmt(p.certified)}/{fmt(p.contractValue)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

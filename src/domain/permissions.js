@@ -1,9 +1,9 @@
 
 export const ROLES = {
-  owner:    { label: "مالك المكتب", color: "#BF9000", textOn: "#1F1F1F" },
-  manager:  { label: "مدير مشاريع", color: "#1E7B45", textOn: "#FFFFFF" },
-  engineer: { label: "مهندس",       color: "#2E5395", textOn: "#FFFFFF" },
-  pending:  { label: "بانتظار الموافقة", color: "#B45309", textOn: "#FFFFFF" },
+  owner:    { label: "مالك المكتب", color: "#B08A3E", textOn: "#1C1B19" },
+  manager:  { label: "مدير مشاريع", color: "#4A6152", textOn: "#FFFFFF" },
+  engineer: { label: "مهندس",       color: "#6B5B7B", textOn: "#FFFFFF" },
+  pending:  { label: "بانتظار الموافقة", color: "#8C8880", textOn: "#FFFFFF" },
 };
 export const ASSIGNABLE_ROLES = ["engineer", "manager", "owner"];
 

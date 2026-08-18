@@ -1,13 +1,26 @@
-export const NAVY = "#1F4E78";
-export const NAVY_DARK = "#163A57";
-export const GOLD = "#BF9000";
-export const LIGHT = "#F5F7FA";
-export const BORDER = "#E3E7EE";
-export const TEXT = "#1F2937";
-export const MUTED = "#6B7280";
+/* ═══════════════ الهوية المعمارية ═══════════════
+   حيادي دافئ + لون واحد مميّز. الأسماء القديمة مبقاة
+   عمدًا (NAVY/GOLD) لئلا ينكسر أي استدعاء قائم — وقيمها
+   وحدها هي التي تغيّرت. */
+export const CLAY = "#A8553A";        // اللون المميّز
+export const CLAY_DARK = "#8A422C";
+export const SAGE = "#4A6152";        // نجاح واعتماد
+export const COPPER = "#B08A3E";      // تنبيه وقيم مالية
+export const DANGER = "#A8322B";
+export const INK = "#1C1B19";
+export const PAPER = "#FDFCFA";
+export const STONE = "#E8E4DE";
+
+export const NAVY = CLAY;
+export const NAVY_DARK = INK;
+export const GOLD = COPPER;
+export const LIGHT = "#F4F1EC";
+export const BORDER = "#E4DFD7";
+export const TEXT = INK;
+export const MUTED = "#6E6A63";
 
 export const LEVELS = ["اقتصادي", "متوسط", "لوكس", "سوبر لوكس"];
-export const LEVEL_COLORS = { "اقتصادي": "#6B7280", "متوسط": "#2E5395", "لوكس": "#BF9000", "سوبر لوكس": "#1F1F1F" };
+export const LEVEL_COLORS = { "اقتصادي": "#8C8880", "متوسط": "#4A6152", "لوكس": "#B08A3E", "سوبر لوكس": "#1C1B19" };
 
 export const SCOPES = [
   "تصميم",
@@ -35,11 +48,11 @@ export const PHASES = [
 ];
 
 export const PHASE_COLORS = {
-  "التصميم والتسعير المبدئي": "#7030A0",
-  "التعديلات المعمارية": "#833C00",
-  "التأسيس": "#0B5394",
-  "التشطيب النهائي": "#1F4E78",
-  "الفرش والأثاث": "#38761D",
+  "التصميم والتسعير المبدئي": "#6B5B7B",
+  "التعديلات المعمارية": "#8A422C",
+  "التأسيس": "#4A6152",
+  "التشطيب النهائي": "#A8553A",
+  "الفرش والأثاث": "#7A6A4F",
 };
 
 export const PHASE_SHORT = {
@@ -52,9 +65,18 @@ export const PHASE_SHORT = {
 
 export const STAGES = ["عميل محتمل", "قيد التصميم", "تم التعاقد", "قيد التنفيذ", "تم التسليم"];
 export const STAGE_COLORS = {
-  "عميل محتمل": "#9CA3AF",
-  "قيد التصميم": "#2E5395",
-  "تم التعاقد": "#BF9000",
-  "قيد التنفيذ": "#C2410C",
-  "تم التسليم": "#1E7B45",
+  "عميل محتمل": "#8C8880",
+  "قيد التصميم": "#6B5B7B",
+  "تم التعاقد": "#B08A3E",
+  "قيد التنفيذ": "#A8553A",
+  "تم التسليم": "#4A6152",
 };
+
+/* ═══════════════ الأقسام الثلاثة ═══════════════
+   فصل ما كان مكدَّسًا في شريط واحد: إدارة المكتب لها منطقها،
+   والعملاء لهم منطقهم، والمقاولون طرف ثالث بحساباته الخاصة. */
+export const SECTIONS = [
+  { key: "office",      label: "إدارة المكتب" },
+  { key: "clients",     label: "العملاء" },
+  { key: "contractors", label: "المقاولون" },
+];
