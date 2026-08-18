@@ -251,7 +251,7 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
             <Download size={15} /> ملخص كل العملاء
           </button>
           {/* للمحاسب: كشف حركة موحّد بدل نقل الأرقام شفهيًا */}
-          <button onClick={() => exportLedger(clients)} className="btn btn-gold" title="كشف حركة بكل العقود والتحصيلات والمصروفات">
+          <button onClick={() => exportLedger(clients, settings)} className="btn btn-gold" title="كشف حركة بكل العقود والتحصيلات والمصروفات">
             <FileSpreadsheet size={15} /> دفتر الحركة للمحاسب
           </button>
         </div>

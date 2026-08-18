@@ -1,5 +1,6 @@
 import { ITEMS, SPECS, DEFAULT_SETTINGS, phaseOf } from "./catalogue.js";
 import { LEVELS, SCOPES, STAGES, PHASES } from "../ui/tokens.js";
+import { derivedSellPrice } from "./resources.js";
 
 /* النطاقات التي تحمل أتعاب الإشراف والاحتياطي. التصميم والفرش خارجها:
    الأول أتعاب أصلًا، والثاني توريد لا إشراف عليه. */
@@ -70,7 +71,10 @@ export function migrateClient(client) {
 const has = (o, k) => o && Object.prototype.hasOwnProperty.call(o, k)
   && o[k] !== "" && o[k] !== null && o[k] !== undefined;
 
-export function resolveItem(client, item, area) {
+/* ctx اختياري: { lib, book } — حين يُمرَّر ويكون الاشتقاق مُشغَّلًا،
+   يأتي سعر الوحدة من موارد المكتب لا من رقم الكتالوج الثابت.
+   بدونه يعمل النظام كما كان تمامًا — لا شيء ينكسر. */
+export function resolveItem(client, item, area, ctx = null) {
   const [scope, name, unit, qtyFn, prices, id] = item;
   const rec = (client.items || {})[id] || {};
 
@@ -81,7 +85,12 @@ export function resolveItem(client, item, area) {
   const hasQtyOverride = has(rec, "qty");
   const qty = hasQtyOverride ? Number(rec.qty) : qtyFn(area);
 
-  const basePrice = prices[levelIdx];
+  let basePrice = prices[levelIdx];
+  let priceSource = "catalogue";
+  if (ctx?.lib && ctx?.book) {
+    const d = derivedSellPrice(ctx.lib, ctx.book, item, levelIdx);
+    if (d.source === "derived") { basePrice = d.price; priceSource = "derived"; }
+  }
   const hasPriceOverride = has(rec, "price");
   const price = hasPriceOverride ? Number(rec.price) : basePrice;
 
@@ -93,7 +102,7 @@ export function resolveItem(client, item, area) {
   if (hasPriceOverride) overrides.push("سعر");
 
   return {
-    id, scope, name, unit, included, level, levelIdx, qty, price, basePrice,
+    id, scope, name, unit, included, level, levelIdx, qty, price, basePrice, priceSource,
     phase: phaseOf(id, scope),
     total: included ? qty * price : 0,
     hasQtyOverride, hasPriceOverride, isCustomLevel: !!rec.level,
@@ -104,12 +113,12 @@ export function resolveItem(client, item, area) {
 }
 
 
-export function calcClient(client, settings) {
+export function calcClient(client, settings, ctx = null) {
   const area = Number(client.area) || 0;
   const byScope = {};
   SCOPES.forEach(s => (byScope[s] = 0));
   ITEMS.forEach((item) => {
-    const r = resolveItem(client, item, area);
+    const r = resolveItem(client, item, area, ctx);
     byScope[r.scope] += r.total;
   });
   const execTotal = EXEC_SCOPES.reduce((sum, s) => sum + byScope[s], 0);
@@ -129,9 +138,9 @@ export function calcClient(client, settings) {
    تُحسب لكل مرحلة من بنودها هي. وبما أن الثلاثة دوال خطّية في قيمة بنود
    التنفيذ، فمجموع المراحل يساوي الإجمالي العام بالجنيه لا بالتقريب.
    (اختبار في test/business.mjs يثبت هذه المساواة ولا يسمح بانحرافها.) */
-export function calcByPhase(client, settings, items = ITEMS) {
+export function calcByPhase(client, settings, items = ITEMS, ctx = null) {
   const area = Number(client.area) || 0;
-  const rows = items.map(it => resolveItem(client, it, area));
+  const rows = items.map(it => resolveItem(client, it, area, ctx));
 
   const phases = PHASES.map(phase => {
     const lines = rows.filter(r => r.phase === phase);
@@ -168,9 +177,9 @@ export function calcByPhase(client, settings, items = ITEMS) {
    + نسب الضريبة والإشراف السارية وقتها). العقد يُطبع من اللقطة لا من الحي.
    أي تعديل لاحق ينشئ ملحقًا برقم إصدار جديد ولا يمس الأصل. */
 
-export function buildContractSnapshot(client, settings, actorName = "") {
+export function buildContractSnapshot(client, settings, actorName = "", ctx = null) {
   const area = Number(client.area) || 0;
-  const lines = ITEMS.map(it => resolveItem(client, it, area))
+  const lines = ITEMS.map(it => resolveItem(client, it, area, ctx))
     .filter(r => r.included)
     .map(r => ({
       id: r.id, name: r.name, scope: r.scope, unit: r.unit,
@@ -183,12 +192,12 @@ export function buildContractSnapshot(client, settings, actorName = "") {
     area,
     settings: { ...settings },      // نسخة، لا مرجع — تعديل الإعدادات لاحقًا لا يمسها
     lines,
-    totals: calcClient(client, settings),
+    totals: calcClient(client, settings, ctx),
   };
 }
 
-export function amendContract(prev, client, settings, actorName = "") {
-  const next = buildContractSnapshot(client, settings, actorName);
+export function amendContract(prev, client, settings, actorName = "", ctx = null) {
+  const next = buildContractSnapshot(client, settings, actorName, ctx);
   next.version = (prev?.version || 1) + 1;
   next.amendedFrom = prev?.signedAt || null;
   return next;

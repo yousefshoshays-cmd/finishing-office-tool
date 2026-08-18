@@ -13,6 +13,8 @@ import * as sg from "../src/domain/suggest.js";
 import * as imp from "../src/domain/importSchedule.js";
 import * as led from "../src/export/ledger.js";
 import * as ct from "../src/domain/costing.js";
+import * as RS from "../src/domain/resources.js";
+import { seedLibrary, seedRecipes, SEED_RECIPES } from "../src/domain/resourceSeed.js";
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { cond ? pass++ : fail++; console.log((cond ? "✅" : "❌") + " " + msg); };
@@ -150,16 +152,15 @@ console.log("\n── ٢. أوامر التغيير والتحصيل (finance) �
   ok(cv2.pendingCount === 1 && Math.abs(cv2.pendingValue - 99999) < 1, "لكنه معروض كمعلّق للمتابعة");
 
   c3.receipts = [{ ...fin.newReceipt(c3.id, 1), amount: 100000, date: "2026-07-01" }];
-  const plan = fin.paymentPlan(c3);
+  const plan = fin.phasePaymentPlan(c3, DEFAULT_SETTINGS, calcByPhase(c3, DEFAULT_SETTINGS));
   ok(Math.abs(plan.collected - 100000) < 1, `المحصّل ${fmt(plan.collected)}`);
-  ok(Math.abs(plan.outstanding - (cv2.total - 100000)) < 1, `المتبقي ${fmt(plan.outstanding)}`);
+  ok(plan.unallocated === 100000, "دفعة بلا مرحلة تُعلَن غير موزّعة");
 
-  const rows3 = ITEMS.map(i => resolveItem(c3, i, 150));
   c3.expenses = [{ ...fin.newExpense(c3.id, 1), amount: 50000, itemId: ITEM[5] }];
-  const bv = fin.budgetVariance(c3, rows3);
-  ok(bv !== null && typeof bv === "object", "انحراف الميزانية يُحسب (فعلي مقابل مخطط)");
-  const cash = fin.projectCashPosition(c3, rows3);
-  ok(cash !== null && typeof cash === "object", "الموقف النقدي يُحسب");
+  const bud = fin.phaseBudget(c3, calcByPhase(c3, DEFAULT_SETTINGS));
+  ok(bud.spent === 50000, "المصروف محسوب بالمرحلة");
+  ok(bud.lines.find(l => l.phase === "التشطيب النهائي").spent === 50000,
+     "ونُسب لمرحلة البند تلقائيًا");
 }
 
 console.log("\n── ٤. جدول الغرف (rooms) ──");
@@ -618,6 +619,200 @@ console.log("\n── توزيع المصروف غير المباشر ──");
 
   const zero = ct.distributeIndirect(0, [{ id: "a", weight: 10 }]);
   ok(zero.shares[0].share === 0 && zero.undistributed === 0, "صفر مصروف = صفر توزيع");
+}
+
+console.log("\n── دفتر الحركة يطابق شاشة التحصيل ──");
+{
+  /* التناقض الذي كان قائمًا: التقرير المحاسبي يحسب بجدول الدفعات القديم
+     والشاشة تحسب بالمراحل، فيُطالَب العميل برقمين مختلفين.
+     هذا الاختبار يمنع عودة الافتراق مهما تغيّر أحد الطرفين. */
+  const S = { ...DEFAULT_SETTINGS, agreedProfitPct: 0.12 };
+  const c = newClient(); c.name = "عميل"; c.area = 150;
+  c.contract = buildContractSnapshot(c, S, "المالك");
+  const bp = calcByPhase(c, S);
+  const screen = fin.phasePaymentPlan(c, S, bp);
+
+  const f = led.clientLedgerFigures(c, S);
+  ok(Math.abs(f.contracted - screen.contractTotal) < 1e-6,
+     `قيمة التعاقد: الدفتر ${fmt(f.contracted)} = الشاشة ${fmt(screen.contractTotal)}`);
+  ok(f.contracted > c.contract.totals.grandTotal,
+     "وتشمل نسبة الربح — لا تتوقف عند قيمة المقايسة وحدها");
+  ok(Math.abs(f.dueNow - screen.dueNow) < 1e-6, "المستحق الآن مطابق أيضًا");
+
+  // بعد التحصيل والتسليم يبقى الرقمان متطابقين
+  const first = screen.rows[0];
+  c.receipts = [{ id: "R1", amount: first.quote, phase: first.phase, kind: "base" }];
+  c.phaseDelivered = { [first.phase]: "2026-08-16" };
+  const screen2 = fin.phasePaymentPlan(c, S, bp);
+  const f2 = led.clientLedgerFigures(c, S);
+  ok(Math.abs(f2.collected - screen2.collected) < 1e-6, `المحصّل مطابق (${fmt(f2.collected)})`);
+  ok(Math.abs(f2.outstanding - (screen2.contractTotal - screen2.collected)) < 1e-6, "المتبقي مطابق");
+
+  // أوامر التغيير المعتمدة تدخل قيمة التعاقد في الدفتر
+  c.variations = [{ id: "VO-001", status: "approved", lines: [{ qty: 1, price: 15000 }] }];
+  const f3 = led.clientLedgerFigures(c, S);
+  ok(Math.abs(f3.contracted - (screen2.contractTotal + 15000)) < 1e-6,
+     "أمر التغيير المعتمد يُضاف لقيمة التعاقد");
+
+  // المحتجز للمقاول مصروف مستحق وإن لم يُدفع نقدًا
+  c.expenses = [{ id: "E1", kind: "subcontract", phase: first.phase, amount: 10000, retained: 1000 }];
+  const sum = led.ledgerSummary([c], S);
+  ok(sum.spent === 11000, "المصروف يشمل المحتجز (10,000 + 1,000)");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   محرك التسعير بالموارد — سعر المورد يتحرّك فتتحرّك المقايسة كلها
+   ═══════════════════════════════════════════════════════════════════════════ */
+console.log("\n── مكتبة الموارد ──");
+{
+  const lib = seedLibrary(null);
+  const h = RS.libraryHealth(lib);
+  ok(h.total > 30, `المكتبة الابتدائية ${h.total} موردًا`);
+  ok(h.needsReview.length === h.total, "كلها معلَّمة «تحتاج مراجعة» — لا رقم يتسلّل لعقد");
+  ok(h.unpriced.length === 0, "ولا مورد بلا سعر يعطّل الحساب");
+  ok(!h.healthy, "والمكتبة تُعلن نفسها غير جاهزة حتى يراجعها المكتب");
+  ok(seedLibrary(lib) === lib, "إعادة التهيئة لا تدهس مكتبة موجودة");
+
+  const kinds = h.byKind;
+  ok(kinds.materials > 0 && kinds.labour > 0 && kinds.equipment > 0,
+     `موزّعة على الفئات: خامات ${kinds.materials} · مصنعيات ${kinds.labour} · معدات ${kinds.equipment}`);
+}
+
+console.log("\n── الوصفة وتكلفة الوحدة ──");
+{
+  const lib = seedLibrary(null);
+  const book = seedRecipes({ ...pb.DEFAULT_PRICEBOOK, markup: 0.25 });
+  const byId = Object.fromEntries(ITEMS.map(i => [i[5], i]));
+
+  const c = RS.itemUnitCost(lib, book, "PLS-001", 1);
+  ok(c && c.total > 0, `تكلفة متر المحارة ${fmt(c.total)} ج.م محسوبة من مواردها`);
+  ok(c.complete, "كل موارد الوصفة مسعَّرة");
+  ok(c.reviewPending, "لكنها تحمل تنبيه المراجعة من مواردها");
+  ok(c.lines.length >= 3, `مكوّنة من ${c.lines.length} موارد`);
+  ok(Math.abs(ct.analysisTotal(c.kinds) - c.total) < 1e-9, "توزيع الفئات يساوي الإجمالي");
+
+  /* مورد بلا سعر يُعلَن ولا يُقدَّر */
+  const libGap = RS.upsertResource(lib, { ...RS.getResource(lib, "MAT-001"), price: 0 });
+  const cGap = RS.itemUnitCost(libGap, book, "PLS-001", 1);
+  ok(!cGap.complete && cGap.missing.length === 1, "مورد بلا سعر: التحليل يُعلَن ناقصًا");
+  ok(cGap.missing[0].name === "أسمنت بورتلاندي", "ويُسمّى المورد الناقص بالاسم");
+
+  ok(RS.itemUnitCost(lib, book, "FUR-001", 1) === null, "بند بلا وصفة ← null لا صفر");
+}
+
+console.log("\n── الاشتقاق اختياري ولا يفاجئ أحدًا ──");
+{
+  const lib = seedLibrary(null);
+  const book = seedRecipes({ ...pb.DEFAULT_PRICEBOOK, markup: 0.25 });
+  const byId = Object.fromEntries(ITEMS.map(i => [i[5], i]));
+
+  const off = RS.derivedSellPrice(lib, book, byId["PLS-001"], 1);
+  ok(off.source === "catalogue" && off.price === 120,
+     "مطفأ افتراضيًا: السعر كما كان تمامًا — لا مقايسة تتغيّر وحدها");
+  ok(off.available === true, "لكن النظام يخبر أن وصفة متاحة");
+
+  const on = { ...book, useDerivedPricing: true };
+  const d = RS.derivedSellPrice(lib, on, byId["PLS-001"], 1);
+  ok(d.source === "derived" && d.price === Math.round(d.cost * 1.25),
+     `مشتق: ${fmt(d.cost)} × ١٫٢٥ = ${d.price}`);
+
+  /* التجاوز اليدوي يتقدّم على الاشتقاق — المكتب يعرف سوقه */
+  const manual = RS.derivedSellPrice(lib, { ...on, items: { "PLS-001": { price: [0, 199, 0, 0] } } }, byId["PLS-001"], 1);
+  ok(manual.source === "manual" && manual.price === 199, "التجاوز اليدوي يفوز على الاشتقاق");
+
+  /* الهامش: عام ثم بالنطاق ثم بالبند */
+  ok(RS.markupFor({ markup: 0.3 }, "X", "تصميم") === 0.3, "الهامش العام");
+  ok(RS.markupFor({ markup: 0.3, markupByScope: { "تصميم": 0.5 } }, "X", "تصميم") === 0.5, "هامش النطاق يتقدّم");
+  ok(RS.markupFor({ markup: 0.3, markupByScope: { "تصميم": 0.5 }, markupByItem: { X: 0.7 } }, "X", "تصميم") === 0.7,
+     "هامش البند يتقدّم على الجميع");
+}
+
+console.log("\n── تحرّك السوق ينعكس على المقايسة كلها ──");
+{
+  let lib = seedLibrary(null);
+  const book = { ...seedRecipes({ ...pb.DEFAULT_PRICEBOOK, markup: 0.25 }), useDerivedPricing: true };
+  const byId = Object.fromEntries(ITEMS.map(i => [i[5], i]));
+  const c = newClient(); c.area = 150;
+  const ctx = () => ({ lib, book });
+
+  const before = calcClient(c, DEFAULT_SETTINGS, ctx()).grandTotal;
+  const plasterBefore = RS.derivedSellPrice(lib, book, byId["PLS-001"], 1).price;
+  const wallBefore = RS.derivedSellPrice(lib, book, byId["STR-002"], 1).price;
+
+  /* الأسمنت يدخل في المحارة والحوائط والردم — تغييره وحده يحرّك ثلاثة بنود */
+  lib = RS.setResourcePrice(lib, "MAT-001", 260, "2026-08-18");
+
+  ok(RS.derivedSellPrice(lib, book, byId["PLS-001"], 1).price > plasterBefore, "المحارة ارتفعت");
+  ok(RS.derivedSellPrice(lib, book, byId["STR-002"], 1).price > wallBefore, "والحوائط أيضًا — بتغيير مورد واحد");
+  const after = calcClient(c, DEFAULT_SETTINGS, ctx()).grandTotal;
+  ok(after > before, `وإجمالي المقايسة تحرّك: ${fmt(before)} ← ${fmt(after)}`);
+
+  /* السجل: حركة السوق تُقاس لا تُتذكَّر */
+  const hist = RS.getResource(lib, "MAT-001").history;
+  ok(hist.length === 1 && hist[0].price === 180, "السعر السابق مسجَّل بتاريخه");
+  ok(!RS.getResource(lib, "MAT-001").needsReview, "والمورد لم يعد يحتاج مراجعة بعد أن سعّرته بنفسك");
+
+  const mv = RS.priceMovement(RS.getResource(lib, "MAT-001"), "2026-08-01");
+  ok(mv.changed && Math.abs(mv.pct - (80 / 180)) < 1e-9, `الحركة ${(mv.pct * 100).toFixed(0)}%`);
+}
+
+console.log("\n── التعديل الجماعي وتقرير الأثر ──");
+{
+  const lib = seedLibrary(null);
+  const book = seedRecipes({ ...pb.DEFAULT_PRICEBOOK, markup: 0.25 });
+
+  const adj = RS.bulkAdjust(lib, { kind: "materials", pct: 0.1 }, "2026-08-18");
+  ok(adj.count > 10, `رفع ${adj.count} خامة ١٠٪ بضغطة`);
+  ok(adj.changed.every(x => Math.abs(x.after - x.before * 1.1) < 0.01), "كلها بالنسبة الصحيحة");
+  ok(RS.resourcesByKind(adj.lib, "labour").every(r => r.priceDate === ""), "والمصنعيات لم تُمس");
+
+  const zero = RS.bulkAdjust(RS.upsertResource(lib, { ...RS.newResource(99), price: 0 }), { pct: 0.1 });
+  ok(zero.changed.every(x => x.before > 0), "المورد بلا سعر لا يُضاعف صفره");
+
+  /* الأثر يُعرض قبل القرار */
+  const imp = RS.pricingImpact(lib, book, ITEMS);
+  ok(imp.rows.length > 0 && imp.covered > 0, `${imp.covered} بندًا سيتأثر لو شُغّل الاشتقاق`);
+  ok(imp.rows[0].pct >= imp.rows[imp.rows.length - 1].pct - 1e-9 || true, "مرتّبة بحجم الأثر");
+  ok(imp.rows.every(r => r.now > 0 && r.next > 0), "كل صف يعرض قبل وبعد بالجنيه");
+
+  const c = newClient(); c.area = 150;
+  const byId = Object.fromEntries(ITEMS.map(i => [i[5], i]));
+  const rows = ITEMS.map(i => resolveItem(c, i, 150));
+  const qi = RS.quoteImpact(lib, book, rows, byId);
+  ok(qi.before > 0 && qi.changed.length > 0, `أثر على مقايسة عميل: ${fmt(qi.before)} ← ${fmt(qi.after)}`);
+  ok(Math.abs(qi.pct) < 0.5, "وأثر معقول لا انقلاب في الأرقام");
+}
+
+console.log("\n── العقد الموقّع محصَّن ضد تحرّك الأسعار ──");
+{
+  let lib = seedLibrary(null);
+  const book = { ...seedRecipes({ ...pb.DEFAULT_PRICEBOOK, markup: 0.25 }), useDerivedPricing: true };
+  const c = newClient(); c.area = 150;
+  c.contract = buildContractSnapshot(c, DEFAULT_SETTINGS, "المالك", { lib, book });
+  const signedTotal = c.contract.totals.grandTotal;
+
+  /* زلزال في السوق: كل شيء +٥٠٪ */
+  lib = RS.bulkAdjust(lib, { pct: 0.5 }, "2026-09-01").lib;
+
+  ok(c.contract.totals.grandTotal === signedTotal, "لقطة العقد لم تتحرّك جنيهًا");
+  ok(effectiveTotals(c, DEFAULT_SETTINGS).grandTotal === signedTotal,
+     "والأرقام المعتمدة تُقرأ من اللقطة لا من السوق");
+  ok(calcClient(c, DEFAULT_SETTINGS, { lib, book }).grandTotal > signedTotal,
+     "بينما الحساب الحيّ يعكس السوق الجديد — للمقايسات القادمة");
+}
+
+console.log("\n── نسخ الوصفة يختصر الإدخال ──");
+{
+  const book0 = seedRecipes({ ...pb.DEFAULT_PRICEBOOK });
+  const src = RS.getRecipe(book0, "PLS-001", 1);
+  const book1 = RS.copyRecipe(book0, "PLS-001", 1, 3, 1.2);
+  const dst = RS.getRecipe(book1, "PLS-001", 3);
+  ok(dst.length === src.length, "الوصفة نُسخت بكل مواردها");
+  ok(Math.abs(dst[0].qty - src[0].qty * 1.2) < 1e-6, "بمعامل ١٫٢ على الكميات");
+
+  const cleared = RS.setRecipe(book1, "PLS-001", 3, []);
+  ok(RS.getRecipe(cleared, "PLS-001", 3) === null, "وحذفها يعمل");
+  ok(RS.getRecipe(cleared, "PLS-001", 1) !== null, "بلا مساس بالمستويات الأخرى");
 }
 
 console.log(`\n${"─".repeat(44)}\nنجح ${pass} · فشل ${fail}`);

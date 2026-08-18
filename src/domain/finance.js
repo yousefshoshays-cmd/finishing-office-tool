@@ -2,27 +2,10 @@ import { PHASES } from "../ui/tokens.js";
 import { phaseOf } from "./catalogue.js";
 import { COST_KINDS, emptyAnalysis, distributeIndirect } from "./costing.js";
 
-/* جدول الدفعات: بيانات أعمال، لا شأن لها بتوليد ملفات Word.
-   كانت معرّفة داخل وحدة التصدير، فكانت تجرّ مكتبة docx كاملة إلى الحزمة الأساسية. */
-export const PAYMENT_STAGES = [
-  { pct: 0.20, label: "دفعة مقدمة عند توقيع العقد" },
-  { pct: 0.20, label: "بعد استلام الخامات وبدء أعمال الهدم والبناء" },
-  { pct: 0.30, label: "بعد الانتهاء من التشطيبات الأساسية (أرضيات، حوائط، أسقف)" },
-  { pct: 0.20, label: "بعد الانتهاء من التركيبات النهائية (أبواب، كهرباء، سباكة، مطبخ وحمامات)" },
-  { pct: 0.10, label: "عند التسليم النهائي والمعاينة المشتركة" },
-];
-
-/* ============================= المال بعد التعاقد =============================
-   قبل هذا كان النظام ينتهي عند توليد العقد. لكن مكتب التشطيبات لا يخسر
-   في التسعير — يخسر في ما بعده: تعديلات غير موثّقة، ودفعات لم تُحصَّل،
-   ومصروفات تجاوزت المقايسة دون أن يلاحظها أحد.
-
-   ثلاثة سجلات تُضاف للعميل:
-     variations[]  أوامر التغيير
-     receipts[]    ما حُصِّل فعلًا
-     expenses[]    ما صُرف فعلًا
-   ولا شيء منها يعدّل لقطة العقد الأصلية. */
-
+/* جدول الدفعات الثابت القديم (٢٠/٢٠/٣٠/٢٠/١٠) حُذف بالكامل مع دالته paymentPlan.
+   بديله phasePaymentPlan: قيمة كل مرحلة تُحصَّل قبل بدئها، ونسبة الربح بعد تسليمها.
+   وحُذف معه budgetVariance وprojectCashPosition — حلّ محلّهما phaseBudget
+   وplannedVsActual اللذان يقارنان بالمرحلة والفئة لا بالبند وحده. */
 /* ---------------------------------- أوامر التغيير ---------------------------------- */
 
 export const VARIATION_STATUS = {
@@ -85,46 +68,6 @@ export function newReceipt(clientId, seq, phase = "", kind = "base") {
 
 /* جدول الدفعات المستحقة مقابل ما حُصِّل فعلًا.
    النسب تُطبَّق على القيمة التعاقدية الحالية شاملة أوامر التغيير المعتمدة. */
-export function paymentPlan(client) {
-  const { total } = contractValue(client);
-  const receipts = client?.receipts || [];
-  const collected = receipts.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-
-  let cumulative = 0;
-  const rows = (PAYMENT_STAGES || []).map(({ label, pct }) => {
-    const due = total * pct;
-    cumulative += due;
-    const paidToHere = Math.min(collected, cumulative);
-    const paidThis = Math.max(0, paidToHere - (cumulative - due));
-    return {
-      label, pct, due,
-      paid: paidThis,
-      remaining: Math.max(0, due - paidThis),
-      settled: paidThis >= due - 0.5,
-    };
-  });
-
-  return {
-    total,
-    collected,
-    outstanding: Math.max(0, total - collected),
-    collectedRatio: total > 0 ? collected / total : 0,
-    rows,
-    nextDue: rows.find(r => !r.settled) || null,
-  };
-}
-
-/* ═══════════════════ التحصيل بالمراحل — نموذج المكتب الفعلي ═══════════════════
-   لكل مرحلة دفعتان لا واحدة:
-
-     ١. قيمة مقايسة المرحلة كاملة — تُحصَّل قبل بدء العمل فيها.
-        المكتب لا يموّل شراء خامات العميل من جيبه.
-     ٢. نسبة الربح المتفق عليها — تُحصَّل بعد تسليم المرحلة وقبولها.
-        الربح يُستحق بالتسليم لا بالوعد، وهذا ما يطمئن العميل ويحمي المكتب.
-
-   الفارق العملي: النظام يمنع اعتبار المرحلة "جاهزة للبدء" قبل تحصيل قيمتها،
-   ولا يُدرج ربح مرحلة في المستحقّات قبل تعليمها مُسلَّمة. */
-
 export function agreedProfitPct(client, settings) {
   const own = client?.agreedProfitPct;
   if (own !== "" && own !== null && own !== undefined) return Number(own) || 0;
@@ -306,47 +249,6 @@ export function contractorLedger(client) {
   };
 }
 
-/* الفعلي مقابل المخطط لكل بند — الرقم الذي يكشف التجاوز قبل التسليم لا بعده. */
-export function budgetVariance(client, resolvedRows) {
-  const spentByItem = {};
-  let unassigned = 0;
-  for (const e of client?.expenses || []) {
-    const amt = Number(e.amount) || 0;
-    if (e.itemId) spentByItem[e.itemId] = (spentByItem[e.itemId] || 0) + amt;
-    else unassigned += amt;
-  }
-
-  const lines = resolvedRows
-    .filter(r => r.included)
-    .map(r => {
-      const spent = spentByItem[r.id] || 0;
-      return {
-        id: r.id, name: r.name,
-        planned: r.total,
-        spent,
-        diff: r.total - spent,
-        overrun: spent > r.total,
-        ratio: r.total > 0 ? spent / r.total : 0,
-      };
-    });
-
-  const planned = lines.reduce((s, l) => s + l.planned, 0);
-  const spent = lines.reduce((s, l) => s + l.spent, 0) + unassigned;
-  return {
-    lines,
-    planned,
-    spent: spent,
-    unassigned,
-    remaining: planned - spent,
-    overruns: lines.filter(l => l.overrun).sort((a, b) => (b.spent - b.planned) - (a.spent - a.planned)),
-  };
-}
-
-/* ═══════════════════ المصروف الفعلي مقابل مقايسة كل مرحلة ═══════════════════
-   الرقم الذي طلبه المكتب: صرفنا كام في التأسيس مقابل المقيَّس له؟
-   المقارنة تتم مع قيمة بنود المرحلة (base) لا مع ما يدفعه العميل (quote) —
-   لأن الإشراف والاحتياطي والضريبة ليست مصروفات موردين، وإدخالها في
-   المقارنة يجعل كل مرحلة تبدو رابحة وهي ليست كذلك. */
 export function phaseBudget(client, byPhase) {
   const spent = {};
   let unassigned = 0;
@@ -527,20 +429,5 @@ export function itemActualCost(client, plannedAnalysis) {
     lines,
     undistributed,
     overruns: lines.filter(l => l.overrun).sort((a, b) => (b.actual - b.planned) - (a.actual - a.planned)),
-  };
-}
-
-/* الصورة المالية الكاملة للمشروع في رقم واحد */
-export function projectCashPosition(client, resolvedRows) {
-  const cv = contractValue(client);
-  const pay = paymentPlan(client);
-  const bud = budgetVariance(client, resolvedRows);
-  return {
-    contractValue: cv.total,
-    collected: pay.collected,
-    outstanding: pay.outstanding,
-    spent: bud.spent,
-    netCash: pay.collected - bud.spent,        // السيولة الفعلية الآن
-    projectedProfit: cv.total - bud.spent,     // إن لم يُصرف شيء إضافي
   };
 }

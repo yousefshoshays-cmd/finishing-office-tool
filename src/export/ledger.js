@@ -1,8 +1,32 @@
 let _ExcelJS = null;
 const ExcelJSLib = async () => (_ExcelJS ||= await import("exceljs"));
 import { saveAs } from "file-saver";
-import { contractValue, paymentPlan, variationTotal } from "../domain/finance.js";
-import { fmt } from "../domain/catalogue.js";
+import { contractValue, phasePaymentPlan, variationTotal } from "../domain/finance.js";
+import { calcByPhase } from "../domain/pricing.js";
+import { fmt, DEFAULT_SETTINGS } from "../domain/catalogue.js";
+
+/* ════════════════════════════════════════════════════════════════
+   الأرقام هنا تُقرأ من نفس مصدر شاشة التحصيل — لا من حساب موازٍ.
+
+   كان هذا الملف يحسب بجدول الدفعات الثابت القديم (٢٠/٢٠/٣٠/٢٠/١٠)
+   بينما انتقل التطبيق كله إلى المراحل، فكان يعطي للعميل الواحد
+   قيمة تعاقد ومتبقيًا يخالفان ما يراه المكتب على الشاشة.
+   اختبار في test/smoke.mjs يثبت تطابق الرقمين ويمنع افتراقهما ثانيةً.
+   ════════════════════════════════════════════════════════════════ */
+export function clientLedgerFigures(client, settings = DEFAULT_SETTINGS) {
+  const plan = phasePaymentPlan(client, settings, calcByPhase(client, settings));
+  const cv = contractValue(client);
+  return {
+    /* قيمة التعاقد = قيمة المراحل + نسبة الربح + أوامر التغيير المعتمدة */
+    contracted: plan.contractTotal + cv.variations,
+    collected: plan.collected,
+    outstanding: Math.max(0, plan.contractTotal + cv.variations - plan.collected),
+    dueNow: plan.dueNow,
+    quoteTotal: plan.quoteTotal,
+    profitTotal: plan.profitTotal,
+    variations: cv.variations,
+  };
+}
 
 /* ════════════════════════════════════════════════════════════════
    دفتر الأستاذ — للمحاسب لا بدلًا منه
@@ -62,21 +86,23 @@ export function ledgerEntries(clients) {
   return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
-export function ledgerSummary(clients) {
-  let contracted = 0, collected = 0, spent = 0, outstanding = 0;
+export function ledgerSummary(clients, settings = DEFAULT_SETTINGS) {
+  let contracted = 0, collected = 0, spent = 0, outstanding = 0, dueNow = 0;
   for (const c of clients || []) {
     if (!c.contract) continue;
-    const cv = contractValue(c);
-    const plan = paymentPlan(c);
-    contracted += cv.total;
-    collected += plan.collected;
-    outstanding += plan.outstanding;
-    spent += (c.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const f = clientLedgerFigures(c, settings);
+    contracted += f.contracted;
+    collected += f.collected;
+    outstanding += f.outstanding;
+    dueNow += f.dueNow;
+    /* المصروف يشمل المحتجز: عمل نُفّذ واستُحق وإن لم يُصرف نقدًا بعد */
+    spent += (c.expenses || []).reduce(
+      (s, e) => s + (Number(e.amount) || 0) + (Number(e.retained) || 0), 0);
   }
-  return { contracted, collected, outstanding, spent, netCash: collected - spent };
+  return { contracted, collected, outstanding, dueNow, spent, netCash: collected - spent };
 }
 
-export async function exportLedger(clients, filename = "دفتر_الحركة.xlsx") {
+export async function exportLedger(clients, settings = DEFAULT_SETTINGS, filename = "دفتر_الحركة.xlsx") {
   const wb = new (await ExcelJSLib()).Workbook();
   wb.creator = "نظام متابعة العملاء والتسعير";
 
@@ -121,17 +147,17 @@ export async function exportLedger(clients, filename = "دفتر_الحركة.xl
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
   });
   for (const c of (clients || []).filter(c => c.contract)) {
-    const cv = contractValue(c);
-    const plan = paymentPlan(c);
-    const spent = (c.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const f = clientLedgerFigures(c, settings);
+    const spent = (c.expenses || []).reduce(
+      (s, e) => s + (Number(e.amount) || 0) + (Number(e.retained) || 0), 0);
     const row = ws2.addRow({
-      client: c.name || "بدون اسم", value: cv.total,
-      collected: plan.collected, outstanding: plan.outstanding,
-      spent, net: plan.collected - spent,
+      client: c.name || "بدون اسم", value: f.contracted,
+      collected: f.collected, outstanding: f.outstanding,
+      spent, net: f.collected - spent,
     });
     ["value", "collected", "outstanding", "spent", "net"].forEach(k => { row.getCell(k).numFmt = "#,##0"; });
   }
-  const sum = ledgerSummary(clients);
+  const sum = ledgerSummary(clients, settings);
   const total = ws2.addRow({
     client: "الإجمالي", value: sum.contracted, collected: sum.collected,
     outstanding: sum.outstanding, spent: sum.spent, net: sum.netCash,

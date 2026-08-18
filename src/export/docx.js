@@ -2,9 +2,8 @@ import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Width
 import { saveAs } from "file-saver";
 import { fmt, SPECS } from "../domain/catalogue.js";
 import { LEVELS, SCOPES } from "../ui/tokens.js";
-import { PAYMENT_STAGES, phasePaymentPlan } from "../domain/finance.js";
+import { phasePaymentPlan } from "../domain/finance.js";
 import { calcByPhase } from "../domain/pricing.js";
-export { PAYMENT_STAGES };
 
 
 export function rtlP(opts) { return new Paragraph({ bidirectional: true, alignment: AlignmentType.RIGHT, ...opts }); }
