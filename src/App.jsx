@@ -21,6 +21,7 @@ import { catalogueDriftReport, priceOutliers } from "./domain/suggest.js";
 import { fetchLicense, licenseNotice, LICENSE_UNKNOWN } from "./data/license.js";
 /* لوحة الإدارة تُحمَّل عند الطلب: مدير واحد فقط يحتاجها، فلا داعي لتحميلها للجميع. */
 const AdminPanel = React.lazy(() => import("./ui/AdminPanel.jsx"));
+const Portal = React.lazy(() => import("./ui/Portal.jsx"));
 const BillingPanel = React.lazy(() => import("./ui/BillingPanel.jsx"));
 import { amIPlatformAdmin } from "./data/admin.js";
 import { parseSchedule, parseCSV } from "./domain/importSchedule.js";
@@ -32,13 +33,18 @@ import {
 } from "./domain/finance.js";
 import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, suggestedQuantities, applySuggestions } from "./domain/rooms.js";
 import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
-import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET } from "./data/photos.js";
+import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET, bucketStatus } from "./data/photos.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import {
   ProjectCover, StagePill, SectionHead, Frame, Meta, MetaGrid,
   Eyebrow, Rule, LangToggle, CoverUpload,
 } from "./ui/editorial.jsx";
 import { t, useLang, applyDocumentLang, currency } from "./ui/i18n.js";
+import { APP_VERSION, APP_FEATURES } from "./version.js";
+import {
+  issueClientAccount, resetClientPassword, revokeClientAccount,
+  issueContractorAccount, portalUrl, isPortalRoute,
+} from "./data/portal.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS, officeLine } from "./domain/catalogue.js";
 import {
   newClient, resolveItem, calcClient, calcByPhase, migrateClient, progressFromVisits,
@@ -1301,6 +1307,207 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings, coverUrls = 
   );
 }
 
+/* ═══════════ غلاف المشروع ═══════════
+   لماذا مكوّن كامل لا زر رفع؟ لأن ثلاثة أشياء كانت تفشل بصمت:
+
+     ١· الزر كان يظهر فقط في الوضع السحابي، فمن يعمل محليًا لا يرى
+        وسيلة لإضافة صورة أصلًا ويظن الميزة غير موجودة.
+     ٢· فشل الرفع كان يظهر بعد اختيار الملف — بعد أن يكون المستخدم
+        بذل جهدًا — بدل أن يُعرَف الخلل قبله.
+     ٣· من لم يُنشئ مساحة التخزين بعد كان يقف بلا بديل. ولذلك أُضيف
+        لصق رابط صورة: يعمل بلا أي إعداد، وبلا استهلاك مساحة.
+
+   منطقة الصورة نفسها صارت قابلة للضغط — لأن الفراغ الذي يقول
+   «أضف صورة المشروع» يُتوقَّع منه أن يستجيب للضغط. */
+function ProjectHeader({ client, coverUrl, calc, onChange }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [urlMode, setUrlMode] = useState(false);
+  const [urlVal, setUrlVal] = useState(client.coverUrl || "");
+  const canUpload = photosAvailable();
+
+  const pick = async (ev) => {
+    const file = (ev.target.files || [])[0];
+    ev.target.value = "";
+    if (!file) return;
+    setBusy(true); setMsg("");
+    try {
+      const res = await uploadPhoto(client.id, "cover", file);
+      onChange({ coverPath: res.path, coverUrl: "" });
+      setMsg("");
+    } catch (ex) {
+      /* لا نكتفي برسالة الخادم: نفحص المساحة ونقول ما العمل */
+      const st = await bucketStatus();
+      setMsg(st.ok ? (ex.message || "تعذّر الرفع") : st.message);
+    }
+    setBusy(false);
+  };
+
+  const openPicker = () => {
+    if (!canUpload) { setUrlMode(true); setMsg("الوضع محلي — استخدم رابط صورة، أو فعّل المزامنة السحابية للرفع"); return; }
+    fileRef.current?.click();
+  };
+
+  const saveUrl = () => {
+    onChange({ coverUrl: urlVal.trim(), coverPath: urlVal.trim() ? "" : client.coverPath });
+    setUrlMode(false);
+  };
+
+  const shown = client.coverUrl || coverUrl || "";
+
+  return (
+    <div className="mb-9">
+      <div onClick={openPicker} style={{ cursor: "pointer" }} title={t("صورة الغلاف")}>
+        <ProjectCover client={{ ...client, coverUrl: shown || undefined }} height={null} ratio="16 / 7">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <StagePill stage={client.stage} onDark={!!shown} />
+              <div className="truncate" style={{ fontSize: 24, fontWeight: 500, letterSpacing: "-0.02em", marginTop: 4 }}>
+                {client.name || t("بدون اسم")}
+              </div>
+            </div>
+          </div>
+        </ProjectCover>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <MetaGrid cols={4} style={{ flex: "1 1 420px", columnGap: 22 }} items={[
+          { label: "المساحة", value: `${client.area} م²` },
+          { label: "المهندس", value: client.engineer || "—" },
+          { label: "الحالة", value: t(client.stage) },
+          { label: calc.frozen ? "قيمة العقد" : "تقديري", value: `${fmt(calc.grandTotal)} ${currency()}` },
+        ]} />
+
+        <div className="flex flex-col items-stretch gap-2" style={{ minWidth: 220 }}>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn" disabled={busy} onClick={openPicker}>
+              {busy ? t("جاري الرفع…") : t("رفع صورة")}
+            </button>
+            <button type="button" className="btn" onClick={() => setUrlMode(v => !v)}>
+              {t("رابط صورة")}
+            </button>
+            {shown && (
+              <button type="button" className="btn"
+                      onClick={() => { onChange({ coverUrl: "", coverPath: "" }); setUrlVal(""); }}
+                      style={{ color: DANGER, borderColor: DANGER }}>
+                {t("حذف")}
+              </button>
+            )}
+          </div>
+
+          {urlMode && (
+            <div className="flex items-center gap-2">
+              <input className="inp" placeholder="https://…" value={urlVal}
+                     onChange={e => setUrlVal(e.target.value)} style={{ marginBottom: 0 }} />
+              <button type="button" className="btn btn-primary" onClick={saveUrl}>{t("حفظ")}</button>
+            </div>
+          )}
+
+          {msg && <div style={{ fontSize: 11, color: DANGER, lineHeight: 1.7 }}>{msg}</div>}
+        </div>
+      </div>
+
+      <input ref={fileRef} type="file" accept="image/*" hidden onChange={pick} />
+    </div>
+  );
+}
+
+/* ═══════════ إصدار حساب الدخول ═══════════
+   عميلًا كان أو مقاولًا، المنطق واحد: المكتب يضغط زرًا، فيولّد الخادم
+   اسمًا وكلمة سر، ويسلّمهما المكتب بيده. لا تسجيل ذاتي — وهذا قرار
+   متعمَّد: من يسجّل نفسه يحتاج تأكيد بريد واستعادة كلمة سر وبابًا
+   مفتوحًا للتسجيل، وثلاثتها مخاطر بلا مقابل في أداة يعرف المكتب فيها
+   عملاءه واحدًا واحدًا.
+
+   كلمة السر تظهر مرة واحدة لأنها لا تُخزَّن أصلًا — يُخزَّن تجزيؤها.
+   من نسيها يحصل على واحدة جديدة، ولا تُسترجع القديمة أبدًا. */
+function PortalAccessPanel({ kind, id, name, onError }) {
+  const [cred, setCred] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [copied, setCopied] = useState("");
+
+  const link = portalUrl();
+  const run = async (what) => {
+    setBusy(what); setCred(null);
+    try {
+      if (what === "issue") {
+        setCred(kind === "contractor"
+          ? await issueContractorAccount(name)
+          : await issueClientAccount(id, name));
+      } else if (what === "reset") {
+        setCred(await resetClientPassword(id));
+      } else if (what === "revoke") {
+        await revokeClientAccount(id);
+        onError?.("تم إيقاف دخول العميل");
+      }
+    } catch (ex) { onError?.(ex.message); }
+    setBusy("");
+  };
+
+  const copy = (text, tag) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(tag); setTimeout(() => setCopied(""), 1600);
+    }).catch(() => {});
+  };
+
+  return (
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginTop: 20 }}>
+      <div className="h-section" style={{ marginBottom: 8 }}>
+        {t(kind === "contractor" ? "دخول المقاول" : "دخول العميل")}
+      </div>
+
+      {!isCloudMode() && (
+        <div style={{ fontSize: 11.5, color: DANGER, marginBottom: 8, lineHeight: 1.8 }}>
+          الوضع محلي — حسابات الدخول تحتاج تفعيل المزامنة السحابية من الإعدادات
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn" disabled={!isCloudMode() || !!busy || (kind === "contractor" && !name)}
+                onClick={() => run("issue")}>
+          {busy === "issue" ? "…" : t("إصدار حساب")}
+        </button>
+        {kind !== "contractor" && (
+          <>
+            <button className="btn" disabled={!!busy} onClick={() => run("reset")}>
+              {busy === "reset" ? "…" : t("إعادة توليد كلمة السر")}
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => run("revoke")}
+                    style={{ color: DANGER, borderColor: DANGER }}>
+              {t("إيقاف الدخول")}
+            </button>
+          </>
+        )}
+      </div>
+
+      {cred && (
+        <div style={{ marginTop: 14, border: `1px solid ${INK}`, padding: "12px 14px" }}>
+          <div className="metagrid" style={{ gridTemplateColumns: "repeat(2, minmax(0,1fr))", columnGap: 14, borderTop: "none" }}>
+            <Meta label="اسم المستخدم" value={cred.username} />
+            <Meta label="كلمة السر" value={cred.password} />
+          </div>
+          <div style={{ fontSize: 11, color: DANGER, marginTop: 8 }}>
+            {t("احفظ كلمة السر الآن — لن تظهر مرة أخرى")}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="btn" onClick={() => copy(cred.username + " / " + cred.password, "cred")}>
+              {copied === "cred" ? t("تم النسخ") : t("نسخ") + " — " + t("اسم المستخدم") + " / " + t("كلمة السر")}
+            </button>
+            <button className="btn" onClick={() => copy(link, "link")}>
+              {copied === "link" ? t("تم النسخ") : t("نسخ") + " — " + t("رابط الدخول")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 10.5, color: MUTED, marginTop: 10, lineHeight: 1.8, wordBreak: "break-all" }}>
+        {t("رابط الدخول")}: {link}
+      </div>
+    </div>
+  );
+}
+
 /* ============================= Client detail ============================= */
 /* ═══════════ اللوحة المالية ═══════════
    الطبقة التي كانت غائبة: ما قيمة العقد بعد التغييرات؟ كم حُصِّل؟ كم صُرف؟
@@ -1948,6 +2155,51 @@ export function ContractorLedger({ client, onChange }) {
 }
 
 /* المصروف الفعلي مقابل مقايسة كل مرحلة — للمالك ومدير المشاريع فقط */
+/* ═══════════ صورة الفاتورة ═══════════
+   فاتورة الخامات ورقة تضيع. تُرفع هنا بجوار المصروف نفسه، فتبقى
+   مربوطة بالبند والمرحلة والمورد — لا في مجلد صور منفصل يُنسى.
+   الرابط موقّت لأن التخزين خاص، فيُطلب عند الضغط لا عند فتح الصفحة. */
+function InvoicePhoto({ clientId, expense, onSet }) {
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+  const available = photosAvailable();
+  if (!available) return null;
+
+  const pick = async (ev) => {
+    const file = (ev.target.files || [])[0];
+    ev.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try {
+      const res = await uploadPhoto(clientId, "invoice", file);
+      onSet(res.path);
+    } catch (ex) { window.alert(ex.message); }
+    setBusy(false);
+  };
+
+  const open = async () => {
+    const urls = await signedUrls([expense.photoPath]);
+    const u = urls[expense.photoPath];
+    if (u) window.open(u, "_blank", "noopener");
+  };
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <button type="button" className="btn" style={{ minHeight: 34, padding: "6px 10px" }}
+              disabled={busy} onClick={() => inputRef.current?.click()}>
+        {busy ? "…" : t("صورة الفاتورة")}
+      </button>
+      {expense.photoPath && (
+        <button type="button" onClick={open} className="eyebrow"
+                style={{ background: "none", border: "none", cursor: "pointer", color: SAGE }}>
+          ✓ {t("عرض")}
+        </button>
+      )}
+      <input ref={inputRef} type="file" accept="image/*" hidden onChange={pick} />
+    </span>
+  );
+}
+
 export function PhaseSpend({ client, settings, priceBook, onChange }) {
   const byPhase = useMemo(() => calcByPhase(client, settings), [client, settings]);
   const bud = useMemo(() => phaseBudget(client, byPhase), [client, byPhase]);
@@ -2102,8 +2354,10 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                   </select>
                   <input className="inp num" style={{ width: 100, marginBottom: 0 }} type="number" inputMode="decimal" placeholder="المبلغ"
                     value={e.amount || ""} onChange={ev => patchExpense(e.id, { amount: Number(ev.target.value) || 0 })} />
-                  <input className="inp flex-1" style={{ minWidth: 110, marginBottom: 0 }} placeholder="المورد / البيان"
+                  <input className="inp flex-1" style={{ minWidth: 110, marginBottom: 0 }} placeholder={t("المورد / البيان")}
                     value={e.vendor || ""} onChange={ev => patchExpense(e.id, { vendor: ev.target.value })} />
+                  <input className="inp" style={{ width: 118, marginBottom: 0 }} placeholder={t("رقم الفاتورة")}
+                    value={e.invoiceNo || ""} onChange={ev => patchExpense(e.id, { invoiceNo: ev.target.value })} />
                   <button onClick={() => removeExpense(e.id)} className="text-xs" style={{ color: "#A8322B" }}>✕</button>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -2113,6 +2367,8 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                     {analysis.lines.filter(l => !e.phase || l.phase === e.phase)
                       .map(l => <option key={l.id} value={l.id}>{l.name.slice(0, 30)}</option>)}
                   </select>
+                  <InvoicePhoto clientId={client.id} expense={e}
+                                onSet={(path) => patchExpense(e.id, { photoPath: path })} />
                   {e.kind === "subcontract" && (
                     <>
                       <select className="inp" style={{ width: 150, marginBottom: 0 }} value={e.contractorId || ""}
@@ -2253,6 +2509,11 @@ export function ContractorsRegistry({ clients, currentMember, onOpenClient }) {
                     ⛔ تجاوز قيمة التعاقد في {r.overCount} {r.overCount === 1 ? "مشروع" : "مشاريع"}
                   </div>
                 )}
+
+                {/* حساب دخول المقاول: مفتاحه اسمه، فيرى أعماله في كل
+                    المشاريع بحساب واحد لا حسابًا لكل مشروع */}
+                <PortalAccessPanel kind="contractor" id={r.name} name={r.name}
+                                   onError={(m) => window.alert(m)} />
 
                 <div className="mt-2 flex flex-wrap gap-1.5 border-t pt-2" style={{ borderColor: BORDER }}>
                   {r.projects.map((p, i) => (
@@ -2430,34 +2691,7 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
         <ChevronLeft size={13} /> {t("رجوع")}
       </button>
 
-      {/* ═══ ترويسة المشروع ═══
-          صورة عريضة يعلوها اسم المشروع، وتحتها بيانات كركن مخطط.
-          هذه هي الشاشة التي يراها العميل حين يفتح المكتب مشروعه أمامه. */}
-      <div className="mb-9">
-        <ProjectCover client={{ ...client, coverUrl: coverUrl || undefined }} height={null} ratio="16 / 7">
-          <div className="flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <StagePill stage={client.stage} onDark={!!coverUrl} />
-              <div className="truncate" style={{ fontSize: 24, fontWeight: 500, letterSpacing: "-0.02em", marginTop: 4 }}>
-                {client.name || t("بدون اسم")}
-              </div>
-            </div>
-          </div>
-        </ProjectCover>
-
-        <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
-          <MetaGrid cols={4} style={{ flex: "1 1 420px", columnGap: 22 }} items={[
-            { label: "المساحة", value: `${client.area} م²` },
-            { label: "المهندس", value: client.engineer || "—" },
-            { label: "الحالة", value: t(client.stage) },
-            { label: calc.frozen ? "قيمة العقد" : "تقديري", value: `${fmt(calc.grandTotal)} ${currency()}` },
-          ]} />
-          {photosAvailable() && (
-            <CoverUpload clientId={client.id} uploadPhoto={uploadPhoto}
-                         onUploaded={(path) => onChange({ coverPath: path })} />
-          )}
-        </div>
-      </div>
+      <ProjectHeader client={client} coverUrl={coverUrl} calc={calc} onChange={onChange} />
 
       {(client.stage === "تم التعاقد" || client.stage === "قيد التنفيذ" || client.stage === "تم التسليم") && (
         <div className="mb-7 flex flex-wrap items-center justify-between gap-3 py-4"
@@ -2527,6 +2761,9 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
               <textarea className="inp" rows={3} value={client.notes} onChange={e => onChange({ notes: e.target.value })} />
             </Field>
           </div>
+
+          <PortalAccessPanel kind="client" id={client.id} name={client.name}
+                             onError={(m) => window.alert(m)} />
 
           <button onClick={exportExcel} className="btn mt-5 w-full">
             <Download size={15} /> {t("تصدير")} — Excel
@@ -3324,6 +3561,77 @@ function PendingApprovalScreen({ onSignOut, onRefresh }) {
 }
 
 /* ============================= Settings ============================= */
+/* ═══════════ حالة النظام ═══════════
+   الشاشة التي كانت غائبة. ثلاث مرات كان السؤال واحدًا: «لا أرى الخانة»
+   أو «لا أستطيع الرفع» — والإجابة في كل مرة إعدادٌ ناقص لا عطل في الأداة.
+   هنا يفحص النظام نفسه ويقول ما ينقص وأين يُصلَح، بدل التخمين. */
+function SystemCheck() {
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = useCallback(async () => {
+    setBusy(true);
+    const out = [];
+    const cloud = isCloudMode();
+    out.push({ k: "المزامنة السحابية", ok: cloud,
+               v: cloud ? "مفعّلة" : "محلي — الحسابات ورفع الصور تحتاجها" });
+
+    const st = await bucketStatus();
+    out.push({ k: "مساحة الصور", ok: st.ok, v: st.message });
+
+    /* وجود دوال البوابة يُفحص بندائها فعلًا: الرد بخطأ «الدالة غير
+       موجودة» يعني أن ملف الهجرة لم يُشغَّل بعد. */
+    const sb = getSupabase();
+    for (const [fn, label, file] of [
+      ["portal_check", "بوابة العميل", "010_client_portal.sql"],
+      ["storage_check", "بوابة المقاول", "011_storage_and_contractors.sql"],
+    ]) {
+      if (!cloud || !sb) { out.push({ k: label, ok: false, v: "تحتاج المزامنة السحابية" }); continue; }
+      try {
+        const { error } = await withTimeout(sb.rpc(fn), 12000);
+        out.push(error
+          ? { k: label, ok: false, v: `شغّل ${file} في Supabase` }
+          : { k: label, ok: true, v: "جاهزة" });
+      } catch {
+        out.push({ k: label, ok: false, v: `شغّل ${file} في Supabase` });
+      }
+    }
+
+    setRows(out);
+    setBusy(false);
+  }, []);
+
+  useEffect(() => { run(); }, [run]);
+
+  return (
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 24 }}>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="h-section">{t("حالة النظام")}</span>
+        <button className="btn" style={{ minHeight: 34, padding: "6px 12px" }} onClick={run} disabled={busy}>
+          {busy ? "…" : t("إعادة الفحص")}
+        </button>
+      </div>
+
+      <div className="mb-3 text-[11px]" style={{ color: MUTED }}>
+        نسخة الملفات المنشورة: <b className="num">{APP_VERSION}</b>
+        {" — "}{APP_FEATURES.join(" · ")}
+      </div>
+
+      {!rows && <div className="text-xs" style={{ color: MUTED }}>جارٍ الفحص…</div>}
+      {rows && rows.map(r => (
+        <div key={r.k} style={{ display: "flex", gap: 10, alignItems: "flex-start",
+                                borderBottom: `1px solid ${BORDER}`, padding: "9px 0" }}>
+          <span style={{ fontSize: 13 }}>{r.ok ? "✅" : "❌"}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{r.k}</div>
+            <div style={{ fontSize: 11.5, color: r.ok ? MUTED : DANGER, lineHeight: 1.7 }}>{r.v}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SettingsPanel({ settings, onSave, onExportBackup, onImportBackup, clientCount, team, currentMember, onAddMember, onRemoveMember, cloud, pendingMembers, onApproveMember, license }) {
   const [local, setLocal] = useState(settings);
   const fileInputRef = React.useRef(null);
@@ -3477,6 +3785,8 @@ alter publication supabase_realtime add table profiles;`;
   return (
     <div className="max-w-lg">
       <h2 className="mb-4 text-xl font-bold text-navy">الإعدادات العامة</h2>
+
+      <SystemCheck />
 
       <div className="sheet p-4">
         <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
@@ -4027,6 +4337,21 @@ export default function App() {
   useEffect(() => {
     if (!("indexedDB" in window)) setSupported(false);
   }, []);
+
+  /* ═══ بوابة العميل والمقاول ═══
+     نفس الموقع بمعامل واحد في الرابط (‎?portal=1‎). لا نطاق جديد ولا
+     استضافة ثانية ولا نسخة يجب تحديثها مرتين — والبوابة تُحمَّل عند
+     طلبها فقط فلا تُثقل تحميل أداة المكتب. */
+  if (isPortalRoute()) {
+    return (
+      <ErrorBoundary>
+        <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#83807A" }}>…</div>}>
+          <Portal />
+        </React.Suspense>
+      </ErrorBoundary>
+    );
+  }
+
   if (!supported) return <StorageUnsupported />;
   return (
     <ErrorBoundary>

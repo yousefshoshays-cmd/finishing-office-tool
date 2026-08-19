@@ -148,6 +148,9 @@ export const EN = {
   "أضف صورة المشروع": "Add project image",
   "صورة الغلاف": "Cover image",
   "رفع صورة": "Upload image",
+  "رابط صورة": "Image link",
+  "حالة النظام": "System status",
+  "إعادة الفحص": "Re-check",
 
   /* الأفعال */
   "عميل جديد": "New project",
@@ -218,4 +221,57 @@ export const EN = {
   "نمو خط الأعمال آخر 6 أشهر": "Pipeline growth · last 6 months",
   "توزيع خط الأعمال حسب المرحلة (بعدد العملاء)": "Pipeline distribution by stage",
   "جاري التحميل…": "Loading…",
+
+  /* ── البوابة: عميل ومقاول ── */
+  "بوابة الدخول": "Portal",
+  "بوابة العميل": "Client portal",
+  "بوابة المقاول": "Contractor portal",
+  "متابعة مشروعك": "Track your project",
+  "ادخل باسم المستخدم وكلمة السر اللذين سلّمهما لك المكتب": "Sign in with the username and password issued to you by the office",
+  "اسم المستخدم": "Username",
+  "كلمة السر": "Password",
+  "دخول": "Sign in",
+  "جاري الدخول…": "Signing in…",
+  "جاري الرفع…": "Uploading…",
+  "نسيت كلمة السر؟ اطلب من المكتب إصدار كلمة سر جديدة — لا يمكن استرجاع القديمة لأنها غير مخزَّنة أصلًا.":
+    "Forgot your password? Ask the office to issue a new one — the old one cannot be recovered because it is never stored.",
+  "مشروعك": "Your project",
+  "المبلغ": "Amount",
+  "قيمة المرحلة": "Phase value",
+  "يشمل ما يسبق بدء المرحلة القادمة وما استُحق بعد تسليم مرحلة سابقة":
+    "Covers the next phase before it starts, plus profit due on a delivered phase",
+  "قبل البدء": "Before start",
+  "بعد التسليم": "On delivery",
+  "المدفوع": "Paid",
+  "لا توجد دفعات مسجّلة بعد": "No payments recorded yet",
+  "هذه الصفحة للاطلاع فقط — أي تعديل يتم من المكتب. للاستفسار تواصل مع المهندس المسؤول.":
+    "This page is read-only — changes are made by the office. Contact your architect with any question.",
+  "حسابك الجاري": "Your account",
+  "حسابك عبر مشاريع المكتب": "Your account across the office projects",
+  "قيمة التعاقدات": "Contracted",
+  "قيمة التعاقد": "Contract value",
+  "المعتمد": "Certified",
+  "محتجز الضمان": "Retention",
+  "محتجز": "Retention",
+  "المتبقي لك": "Due to you",
+  "المصروف": "Paid out",
+  "لا توجد أعمال مسجّلة باسمك بعد": "No work recorded under your name yet",
+  "محتجز الضمان يُصرف بعد انتهاء فترة الضمان المتفق عليها.":
+    "Retention is released after the agreed defects liability period.",
+
+  /* ── إصدار الحسابات (شاشة المكتب) ── */
+  "دخول العميل": "Client access",
+  "دخول المقاول": "Contractor access",
+  "إصدار حساب": "Issue account",
+  "إعادة توليد كلمة السر": "Reset password",
+  "إيقاف الدخول": "Revoke access",
+  "رابط الدخول": "Portal link",
+  "تم النسخ": "Copied",
+  "احفظ كلمة السر الآن — لن تظهر مرة أخرى": "Save this password now — it will not be shown again",
+
+  /* ── فواتير الشراء ── */
+  "رقم الفاتورة": "Invoice no.",
+  "صورة الفاتورة": "Invoice photo",
+  "عرض": "View",
+  "المورد / البيان": "Supplier / description",
 };

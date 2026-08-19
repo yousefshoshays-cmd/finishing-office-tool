@@ -269,6 +269,69 @@ section("تحليل التكلفة وحسابات المقاولين — عرض 
   check("مصروف مقاول بلا مقاول يُعلَن", shows(orph, "غير منسوبة لمقاول"));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  بوابة العميل والمقاول — ما يراه كلٌّ منهما، وما لا يراه
+// ═══════════════════════════════════════════════════════════════════════════
+import { ClientView, ContractorView } from "../src/ui/Portal.jsx";
+section("بوابة العميل");
+{
+  const c = newClient(9001);
+  c.name = "فيلا الساحل";
+  c.address = "مراسي";
+  c.area = 200;
+  c.stage = "قيد التنفيذ";
+  c.receipts = [{ id: "R1", date: "2026-05-02", phase: PHASES[0], kind: "base", amount: 25000 }];
+  const html = render(React.createElement(ClientView, {
+    session: { kind: "client", name: c.name, orgName: "مكتب النخبة",
+               payload: { client: c, settings: DEFAULT_SETTINGS } },
+  }));
+  check("شاشة العميل لا تنهار", !crashed(html));
+  check("اسم المشروع ظاهر", shows(html, "فيلا الساحل"));
+  check("اسم المكتب ظاهر", shows(html, "مكتب النخبة"));
+  check("دفعة العميل ظاهرة في السجل", shows(html, fmt(25000)));
+  check("المراحل معروضة", shows(html, PHASES[0]));
+  /* الحدّ الفاصل: العميل يرى ما اتفق عليه لا ما يكلّف المكتب */
+  check("لا كلمة «تكلفة» في شاشة العميل", !shows(html, "تكلفة"));
+  check("لا هامش ربح معروض كنسبة داخلية", !shows(html, "الهامش"));
+  check("لا مصروفات موقع", !shows(html, "مصروفات الموقع"));
+  check("لا أسماء مقاولين", !shows(html, "المقاول"));
+  check("لا يوجد NaN", !shows(html, "NaN"));
+}
+section("بوابة المقاول");
+{
+  const payload = [{
+    project: "فيلا الساحل", address: "مراسي",
+    contractors: [{ id: "SUB-001", name: "حسن السيد", trade: "محارة", contractValue: 120000 }],
+    payments: [{ date: "2026-05-01", amount: "40000", retained: "2000", phase: PHASES[2] }],
+  }];
+  const html = render(React.createElement(ContractorView, {
+    session: { kind: "contractor", name: "حسن السيد", orgName: "مكتب النخبة", payload },
+  }));
+  check("شاشة المقاول لا تنهار", !crashed(html));
+  check("اسم المقاول ظاهر", shows(html, "حسن السيد"));
+  check("قيمة تعاقده ظاهرة", shows(html, fmt(120000)));
+  check("محتجز الضمان ظاهر", shows(html, fmt(2000)));
+  /* المعتمد = المصروف + المحتجز — الرقم الذي يقطع النزاع */
+  check("المعتمد = 42,000", shows(html, fmt(42000)));
+  check("المتبقي = 78,000", shows(html, fmt(78000)));
+  check("لا يوجد NaN", !shows(html, "NaN"));
+}
+section("المقاول لا يرى غير حسابه");
+{
+  /* المحاكاة هنا للواجهة فقط — الحجب الحقيقي في دالة قاعدة البيانات
+     التي لا تُرجِع أصلًا صفوف غيره (اختُبرت على خادم بوستجرس حقيقي). */
+  const payload = [{
+    project: "فيلا الساحل",
+    contractors: [{ id: "SUB-001", name: "حسن السيد", contractValue: 120000 }],
+    payments: [{ date: "2026-05-01", amount: "40000", retained: "0" }],
+  }];
+  const html = render(React.createElement(ContractorView, {
+    session: { kind: "contractor", name: "حسن السيد", orgName: "مكتب", payload },
+  }));
+  check("لا قيمة عقد العميل في شاشة المقاول", !shows(html, "قيمة العقد"));
+  check("لا اسم مقاول آخر", !shows(html, "ورشة النور"));
+}
+
 console.log(out.join("\n"));
 console.log("\n" + "─".repeat(60));
 console.log(`نجح ${pass} · فشل ${fail}`);

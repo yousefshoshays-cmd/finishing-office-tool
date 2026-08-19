@@ -150,3 +150,34 @@ export function humanSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} كيلوبايت`;
   return `${(bytes / 1048576).toFixed(1)} ميجابايت`;
 }
+
+/* ═══════════ فحص مساحة التخزين ═══════════
+   السؤال الذي كان يصعب على المكتب الإجابة عنه: هل المشكلة عندي أم
+   في الإعداد؟ هذه الدالة تجيب بجملة واحدة قابلة للتنفيذ بدل رسالة
+   خطأ تظهر بعد اختيار الصورة. */
+export async function bucketStatus() {
+  if (!isCloudMode()) {
+    return { ok: false, code: "local", message: "الوضع محلي — رفع الصور يحتاج المزامنة السحابية" };
+  }
+  const sb = getSupabase();
+  if (!sb) return { ok: false, code: "noclient", message: "تعذّر الاتصال بالخادم" };
+
+  try {
+    const { error } = await withTimeout(
+      sb.storage.from(PHOTO_BUCKET).list("", { limit: 1 }), 12000);
+    if (!error) return { ok: true, code: "ok", message: "مساحة الصور جاهزة" };
+
+    const msg = String(error.message || "").toLowerCase();
+    if (msg.includes("not found") || msg.includes("bucket")) {
+      return { ok: false, code: "nobucket",
+               message: `مساحة "${PHOTO_BUCKET}" غير موجودة — شغّل ملف الهجرة 011 أو أنشئها من Supabase ← Storage` };
+    }
+    if (msg.includes("row-level security") || msg.includes("unauthorized") || msg.includes("403")) {
+      return { ok: false, code: "policy",
+               message: "المساحة موجودة لكن سياسات الوصول ناقصة — شغّل ملف الهجرة 011" };
+    }
+    return { ok: false, code: "unknown", message: error.message };
+  } catch (e) {
+    return { ok: false, code: "unknown", message: e.message || "تعذّر الفحص" };
+  }
+}
