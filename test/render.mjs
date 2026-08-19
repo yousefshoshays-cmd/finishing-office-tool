@@ -336,7 +336,7 @@ section("المقاول لا يرى غير حسابه");
 // ═══════════════════════════════════════════════════════════════════════════
 //  دفتر المقاولين داخل المشروع — اختيار من الدفتر وعامل باليومية
 // ═══════════════════════════════════════════════════════════════════════════
-import { ContractorsRegistry } from "../src/App.jsx";
+import { ContractorsRegistry, CloudAuthGate } from "../src/App.jsx";
 import * as cbk from "../src/domain/contractorBook.js";
 
 section("حسابات المقاولين داخل المشروع");
@@ -428,6 +428,17 @@ section("بوابة العميل — الطبقة البصرية");
   }));
   check("بلا صور: لا ينهار ولا يعرض معرضًا فارغًا",
         !crashed(bare) && !shows(bare, "من الموقع"));
+}
+
+
+section("باب فريق المكتب");
+{
+  const html = render(React.createElement(CloudAuthGate, { onAuthSuccess: () => {} }));
+  check("شاشة دخول المكتب لا تنهار", !crashed(html));
+  check("بنفس تقسيمة البوابات", shows(html, "loginsplit") && shows(html, "loginart"));
+  check("تُعرّف بنفسها كباب للفريق", shows(html, "باب فريق المكتب"));
+  /* من يفتح رابط المكتب وهو عميل كان يقف أمام نموذج لا مخرج منه */
+  check("وفيها طريق للعودة لاختيار الباب", shows(html, "اختر بابك"));
 }
 
 console.log(out.join("\n"));

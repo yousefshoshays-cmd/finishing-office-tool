@@ -3862,7 +3862,7 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
 }
 
 /* ============================= Cloud auth gate (real login, shared across devices) ============================= */
-function CloudAuthGate({ onAuthSuccess }) {
+export function CloudAuthGate({ onAuthSuccess }) {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -3917,8 +3917,29 @@ function CloudAuthGate({ onAuthSuccess }) {
   };
 
   return (
-    <div className="flex min-h-[700px] w-full items-center justify-center" style={{ backgroundColor: LIGHT }}>
-      <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
+    /* باب فريق المكتب بنفس تقسيمة بوابتَي العميل والمقاول: نصف يحمل
+       الهوية ونصف للنموذج. ثلاثة أبواب بثلاث هيئات مختلفة كانت تبدو
+       ثلاثة أنظمة لا نظامًا واحدًا. */
+    <div className="loginsplit">
+      <aside className="loginart">
+        <div className="blueprint" />
+        <div className="loginartveil" />
+        <div className="loginartbody">
+          <Eyebrow style={{ color: "#DCD6CC" }}>باب فريق المكتب</Eyebrow>
+          <div className="loginartname">نظام متابعة العملاء والتسعير</div>
+          <div className="loginartline">
+            المشاريع والمقايسات والتحصيل ودفتر المقاولين — بحساب بريد وكلمة سر.
+          </div>
+          <a href={doorUrls().base} className="eyebrow"
+             style={{ color: "#FFFFFF", display: "inline-block", marginTop: 18,
+                      borderBottom: "1px solid rgba(255,255,255,.5)", textDecoration: "none" }}>
+            لست من فريق المكتب؟ اختر بابك ←
+          </a>
+        </div>
+      </aside>
+
+      <main className="loginform">
+      <div className="w-full max-w-md">
         <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
         <div className="mb-1 flex items-center justify-center gap-1.5 text-xs" style={{ color: "#4A6152" }}>
           <Wifi size={13} /> وضع المزامنة السحابية مفعّل
@@ -4015,6 +4036,7 @@ function CloudAuthGate({ onAuthSuccess }) {
           .inp:focus { outline: none; border-bottom: 2px solid #14110F; }
         `}</style>
       </div>
+      </main>
     </div>
   );
 }
