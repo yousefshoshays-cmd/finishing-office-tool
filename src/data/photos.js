@@ -181,3 +181,54 @@ export async function bucketStatus() {
     return { ok: false, code: "unknown", message: e.message || "تعذّر الفحص" };
   }
 }
+
+/* ═══════════════ معرض العميل ═══════════════
+   مساحة ثانية معلنة عمدًا: بوابة العميل تُفتح بلا جلسة مستخدم، فلا
+   سبيل لرابط موقّت هناك. الفصل بين المساحتين هو ما يحفظ الخصوصية:
+   site-photos للتوثيق الداخلي، وproject-gallery لما ينتقيه المكتب
+   للعرض — ويعلم أنه معلن لمن يملك الرابط. */
+export const GALLERY_BUCKET = "project-gallery";
+
+function galleryBucket() {
+  const sb = getSupabase();
+  if (!sb) throw new Error("المزامنة السحابية غير مفعّلة — المعرض يحتاجها");
+  return sb.storage.from(GALLERY_BUCKET);
+}
+
+export function galleryPublicUrl(path) {
+  const sb = getSupabase();
+  if (!sb || !path) return "";
+  const { data } = sb.storage.from(GALLERY_BUCKET).getPublicUrl(path);
+  return data?.publicUrl || "";
+}
+
+export async function uploadGalleryPhoto(clientId, file) {
+  const orgId = await getOrgId();
+  if (!orgId) throw new Error("تعذّر تحديد المكتب — أعد تسجيل الدخول");
+  if (!photosAvailable()) throw new Error("رفع الصور يحتاج تفعيل المزامنة السحابية");
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("حجم الصورة أكبر من 8 ميجابايت");
+
+  const { blob, width, height } = await compressImage(file);
+  const stamp = Date.now().toString(36);
+  const safe = String(file.name).replace(/[^\w.-]+/g, "_").slice(-40) || "photo";
+  const path = `${orgId}/${clientId}/${stamp}_${safe}.jpg`;
+
+  const { error } = await withTimeout(
+    galleryBucket().upload(path, blob, { contentType: "image/jpeg", upsert: false }), 30000);
+  if (error) {
+    const msg = String(error.message || "").toLowerCase();
+    if (msg.includes("bucket") || msg.includes("not found")) {
+      throw new Error(`مساحة "${GALLERY_BUCKET}" غير موجودة — شغّل ملف الهجرة 014`);
+    }
+    throw new Error(translateStorageError(error));
+  }
+  return { path, url: galleryPublicUrl(path), width, height, bytes: blob.size,
+           uploadedAt: new Date().toISOString() };
+}
+
+export async function deleteGalleryPhoto(path) {
+  try {
+    const { error } = await withTimeout(galleryBucket().remove([path]), 15000);
+    return !error;
+  } catch { return false; }
+}

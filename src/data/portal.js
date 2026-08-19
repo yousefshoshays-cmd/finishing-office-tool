@@ -33,12 +33,30 @@ export function portalClient() {
   return _anon;
 }
 
+/*  ترجمة أخطاء الخادم.
+
+    درس من خطأ سابق: كانت الرسالة المترجَمة تحلّ محلّ رسالة الخادم
+    فتُخفيها — فيقرأ المكتب «شغّل الهجرة» وهو قد شغّلها فعلًا، ولا يبقى
+    أمامه دليل. الآن الترجمة تُضاف ولا تُلغي: التفسير أولًا ثم النصّ
+    الأصلي بين قوسين، فيبقى ما يُرسَل للفحص.  */
 function rpcError(error) {
   const msg = String(error?.message || "");
+  const raw = msg ? ` (${msg})` : "";
+  const low = msg.toLowerCase();
+
   if (msg.includes("غير صحيحة")) return "اسم المستخدم أو كلمة السر غير صحيحة";
-  if (msg.toLowerCase().includes("failed to fetch")) return "تعذّر الاتصال — تحقّق من الإنترنت";
-  if (msg.includes("function") && msg.includes("does not exist")) {
-    return "لم تُشغَّل هجرة البوابة بعد — شغّل 010 و011 في Supabase";
+  if (low.includes("failed to fetch")) return "تعذّر الاتصال — تحقّق من الإنترنت";
+
+  /* الدالة غير موجودة، أو موجودة والخادم لم يحدّث فهرسه بعد.
+     الثانية شائعة في Supabase بعد تشغيل الهجرة مباشرة، وعلاجها
+     سطر واحد: notify pgrst, 'reload schema'; */
+  if (low.includes("does not exist") || low.includes("schema cache") || low.includes("pgrst202")) {
+    return "الخادم لا يجد دالة البوابة — إمّا أن الهجرة لم تُشغَّل في هذا المشروع، "
+         + "أو شُغّلت ولم يُحدَّث فهرس الخادم بعد. الحل: شغّل في SQL Editor: "
+         + "notify pgrst, 'reload schema';" + raw;
+  }
+  if (low.includes("permission denied") || low.includes("not authorized")) {
+    return "لا تملك صلاحية إصدار الحسابات — لمالك المكتب أو مدير المشاريع فقط" + raw;
   }
   return msg || "حدث خطأ غير متوقع";
 }

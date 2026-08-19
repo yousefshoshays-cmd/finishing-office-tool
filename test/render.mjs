@@ -332,6 +332,104 @@ section("المقاول لا يرى غير حسابه");
   check("لا اسم مقاول آخر", !shows(html, "ورشة النور"));
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  دفتر المقاولين داخل المشروع — اختيار من الدفتر وعامل باليومية
+// ═══════════════════════════════════════════════════════════════════════════
+import { ContractorsRegistry } from "../src/App.jsx";
+import * as cbk from "../src/domain/contractorBook.js";
+
+section("حسابات المقاولين داخل المشروع");
+{
+  const book = cbk.upsertContractor(cbk.EMPTY_BOOK,
+    cbk.newContractorRecord("حسن السيد", { phone: "01000000000", trades: ["محارة وبياض"] }));
+
+  const c = newClient(7001);
+  c.name = "فيلا الساحل";
+  const html = render(React.createElement(ContractorLedger, { client: c, book, onChange: () => {} }));
+
+  check("لوحة المقاولين لا تنهار", !crashed(html));
+  check("قائمة الاختيار من الدفتر موجودة", shows(html, "اختر من دفتر المقاولين"));
+  check("المقاول المسجَّل يظهر في القائمة", shows(html, "حسن السيد"));
+  check("وهاتفه بجواره للتمييز", shows(html, "01000000000"));
+  check("زر عامل باليومية موجود", shows(html, "عامل باليومية"));
+  check("زر مقاول جديد موجود", shows(html, "مقاول جديد"));
+
+  const empty = render(React.createElement(ContractorLedger,
+    { client: c, book: cbk.EMPTY_BOOK, onChange: () => {} }));
+  check("الدفتر الفارغ يشرح ما يجب فعله بدل قائمة صامتة",
+        shows(empty, "دفتر المقاولين فارغ"));
+}
+
+section("دفتر المقاولين — زر الإضافة يظهر دائمًا");
+{
+  const owner = { id: "m1", name: "المالك", role: "owner" };
+  const html = render(React.createElement(ContractorsRegistry, {
+    clients: [], currentMember: owner, onOpenClient: () => {},
+    book: cbk.EMPTY_BOOK, onSaveBook: () => {},
+  }));
+  /* الخطأ السابق: الزر كان داخل فرع «توجد بيانات»، فمن لا مقاول لديه
+     لا يرى وسيلة لإضافة أول واحد — وهو بالضبط من يحتاجها. */
+  check("زر «مقاول جديد» ظاهر ولو كان الدفتر فارغًا", shows(html, "مقاول جديد"));
+  check("ورسالة الحالة الفارغة تشرح الطريق", shows(html, "لا يوجد مقاولون بعد"));
+
+  const withRow = render(React.createElement(ContractorsRegistry, {
+    clients: [{ id: "c1", name: "مشروع", contractors: [
+      { id: "SUB-001", name: "ورشة النور", trade: "نجارة", contractValue: 80000 }],
+      expenses: [{ id: "E1", contractorId: "SUB-001", amount: 30000, retained: 1500 }] }],
+    currentMember: owner, onOpenClient: () => {},
+    book: cbk.EMPTY_BOOK, onSaveBook: () => {},
+  }));
+  check("من عمل في مشروع يظهر ولو لم يُسجَّل", shows(withRow, "ورشة النور"));
+  check("ويُعلَّم بأنه غير مسجّل", shows(withRow, "غير مسجّل في الدفتر"));
+  check("والمتبقي له محسوب", shows(withRow, fmt(48500)));
+  check("لا NaN في الدفتر", !shows(withRow, "NaN"));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  بوابة العميل الجديدة — الصورة والمعرض وما لا يجوز أن يظهر
+// ═══════════════════════════════════════════════════════════════════════════
+section("بوابة العميل — الطبقة البصرية");
+{
+  const c = newClient(8100);
+  c.name = "فيلا الساحل";
+  c.address = "مراسي";
+  c.area = 260;
+  c.stage = "قيد التنفيذ";
+  c.progressPercent = 62;
+  c.gallery = [
+    { path: "g/1.jpg", url: "https://x/1.jpg" },
+    { path: "g/2.jpg", url: "https://x/2.jpg" },
+    { path: "g/3.jpg", url: "https://x/3.jpg" },
+  ];
+
+  const html = render(React.createElement(ClientView, {
+    session: { kind: "client", name: c.name, orgName: "مكتب النخبة",
+               payload: { client: c, settings: DEFAULT_SETTINGS } },
+  }));
+
+  check("بوابة العميل لا تنهار", !crashed(html));
+  check("صورة الواجهة معروضة", shows(html, "https://x/1.jpg"));
+  check("حركة الزحف على الواجهة مفعّلة", shows(html, "kenburns"));
+  check("قسم المعرض ظاهر", shows(html, "من الموقع"));
+  check("صور المعرض معروضة", shows(html, "https://x/2.jpg") && shows(html, "https://x/3.jpg"));
+  /* الواجهة والمعرض لا يكرّران نفس الصورة */
+  check("صورة الواجهة لا تتكرّر في المعرض", html.split("https://x/1.jpg").length - 1 === 1);
+  check("نسبة الإنجاز معروضة", shows(html, "62%"));
+  check("تحميل الصور مؤجّل", shows(html, "lazy"));
+  check("لا تكلفة ولا مقاول في شاشة العميل",
+        !shows(html, "تكلفة") && !shows(html, "المقاول") && !shows(html, "مصروفات الموقع"));
+  check("لا NaN", !shows(html, "NaN"));
+
+  const noPics = { ...c, gallery: [] };
+  const bare = render(React.createElement(ClientView, {
+    session: { kind: "client", name: c.name, orgName: "م", payload: { client: noPics, settings: DEFAULT_SETTINGS } },
+  }));
+  check("بلا صور: لا ينهار ولا يعرض معرضًا فارغًا",
+        !crashed(bare) && !shows(bare, "من الموقع"));
+}
+
 console.log(out.join("\n"));
 console.log("\n" + "─".repeat(60));
 console.log(`نجح ${pass} · فشل ${fail}`);

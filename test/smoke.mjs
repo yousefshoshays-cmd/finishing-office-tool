@@ -815,5 +815,92 @@ console.log("\n── نسخ الوصفة يختصر الإدخال ──");
   ok(RS.getRecipe(cleared, "PLS-001", 1) !== null, "بلا مساس بالمستويات الأخرى");
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  دفتر المقاولين — هاتف وصنعة وتقييم وحساب جارٍ لكل مشروع
+// ═══════════════════════════════════════════════════════════════════════════
+import * as cb from "../src/domain/contractorBook.js";
+
+console.log("\n── دفتر المقاولين ──");
+{
+  ok(cb.ckey("  حسن   السيد ") === cb.ckey("حسن السيد"), "المسافات الزائدة لا تصنع مقاولًا جديدًا");
+  ok(cb.ckey("") === "", "الاسم الفارغ بلا مفتاح");
+
+  let book = cb.EMPTY_BOOK;
+  book = cb.upsertContractor(book, cb.newContractorRecord("حسن السيد", {
+    phone: "01000000000", trades: ["محارة وبياض"],
+  }));
+  const key = cb.ckey("حسن السيد");
+  ok(!!book.items[key], "السجل حُفظ بمفتاح موحّد");
+  ok(book.items[key].rating === 0, "التقييم يبدأ صفرًا — أي «لم يُقيَّم» لا «سيئ»");
+
+  book = cb.rateContractor(book, key, 4);
+  ok(book.items[key].rating === 4, "التقييم يُحفظ");
+  book = cb.rateContractor(book, key, 9);
+  ok(book.items[key].rating === 5, "التقييم مقيّد بخمس نجوم");
+  book = cb.rateContractor(book, key, -3);
+  ok(book.items[key].rating === 0, "ولا ينزل تحت الصفر");
+  book = cb.rateContractor(book, key, 4);
+
+  /* مشروعان لنفس المقاول: الحساب الجاري يفصل رصيده في كل واحد */
+  const A = {
+    id: "cA", name: "فيلا الساحل",
+    contractors: [{ id: "SUB-001", name: "حسن السيد", trade: "محارة وبياض", contractValue: 120000 }],
+    expenses: [
+      { id: "E1", contractorId: "SUB-001", kind: "subcontract", amount: 40000, retained: 2000 },
+      { id: "E2", contractorId: "SUB-001", kind: "subcontract", amount: 20000, retained: 1000 },
+    ],
+  };
+  const B = {
+    id: "cB", name: "عيادة المعادي",
+    contractors: [{ id: "SUB-001", name: " حسن  السيد ", trade: "محارة وبياض", contractValue: 60000 }],
+    expenses: [{ id: "E1", contractorId: "SUB-001", kind: "subcontract", amount: 25000, retained: 1500 }],
+  };
+  const C = {
+    id: "cC", name: "مكتب إداري",
+    contractors: [{ id: "SUB-002", name: "ورشة النور", trade: "نجارة", contractValue: 80000 }],
+    expenses: [{ id: "E1", contractorId: "SUB-002", kind: "subcontract", amount: 90000, retained: 0 }],
+  };
+
+  const rows = cb.directory(book, [A, B, C]);
+  const hasan = rows.find(r => r.key === key);
+  const noor  = rows.find(r => r.name === "ورشة النور");
+
+  ok(rows.length === 2, "مقاولان فقط رغم اختلاف كتابة الاسم بين مشروعين");
+  ok(hasan.projects.length === 2, "حسن له سطران — مشروع لكل سطر");
+  ok(hasan.phone === "01000000000", "الهاتف يأتي من الدفتر");
+  ok(hasan.rating === 4, "والتقييم كذلك");
+  ok(hasan.trades.includes("محارة وبياض"), "الصنعة مسجّلة");
+
+  const pA = hasan.projects.find(p => p.clientId === "cA");
+  ok(pA.paid === 60000, "المصروف في فيلا الساحل = 60,000");
+  ok(pA.retained === 3000, "والمحتجز = 3,000");
+  ok(pA.certified === 63000, "والمعتمد = المصروف + المحتجز");
+  ok(pA.remaining === 57000, "والمتبقي = 120,000 − 63,000");
+
+  const pB = hasan.projects.find(p => p.clientId === "cB");
+  ok(pB.remaining === 33500, "وفي عيادة المعادي 60,000 − 26,500 = 33,500");
+
+  ok(hasan.totals.contracted === 180000, "إجمالي تعاقداته عبر المشروعين");
+  ok(hasan.totals.remaining === 90500, "وإجمالي المتبقي له");
+
+  ok(noor.overCount === 1, "تجاوز قيمة التعاقد يُرصد");
+  ok(noor.projects[0].remaining === -10000, "والرصيد يظهر سالبًا لا صفرًا");
+  ok(!noor.inBook, "من لم يُسجَّل في الدفتر يظهر مع ذلك من واقع مشاريعه");
+
+  /* البحث: المكتب يتذكّر الصنعة أحيانًا لا الاسم */
+  ok(cb.searchRows(rows, "نجارة").length === 1, "البحث بالصنعة");
+  ok(cb.searchRows(rows, "0100").length === 1, "البحث بالهاتف");
+  ok(cb.searchRows(rows, "عيادة").length === 1, "البحث باسم المشروع");
+  ok(cb.searchRows(rows, "").length === 2, "بحث فارغ يعيد الكل");
+
+  const totals = cb.bookTotals(rows);
+  ok(totals.contractors === 2 && totals.rated === 1, "إحصاء الدفتر: اثنان، واحد مُقيَّم");
+
+  const gone = cb.removeContractor(book, key);
+  ok(!gone.items[key], "الحذف من الدفتر يعمل");
+  ok(cb.directory(gone, [A, B]).length === 1, "وبعد الحذف يبقى ظاهرًا من واقع مشاريعه");
+}
+
 console.log(`\n${"─".repeat(44)}\nنجح ${pass} · فشل ${fail}`);
 process.exit(fail ? 1 : 0);

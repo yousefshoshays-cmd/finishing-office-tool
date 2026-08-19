@@ -22,6 +22,8 @@ import { fetchLicense, licenseNotice, LICENSE_UNKNOWN } from "./data/license.js"
 /* لوحة الإدارة تُحمَّل عند الطلب: مدير واحد فقط يحتاجها، فلا داعي لتحميلها للجميع. */
 const AdminPanel = React.lazy(() => import("./ui/AdminPanel.jsx"));
 const Portal = React.lazy(() => import("./ui/Portal.jsx"));
+const Landing = React.lazy(() => import("./ui/Landing.jsx"));
+const PortalPreview = React.lazy(() => import("./ui/PortalPreview.jsx"));
 const BillingPanel = React.lazy(() => import("./ui/BillingPanel.jsx"));
 import { amIPlatformAdmin } from "./data/admin.js";
 import { parseSchedule, parseCSV } from "./domain/importSchedule.js";
@@ -32,8 +34,13 @@ import {
   newContractor, contractorLedger, plannedVsActual, siteSpendByKind, itemActualCost,
 } from "./domain/finance.js";
 import { ROOM_TYPES, DEFAULT_CEILING_H, newRoom, roomMetrics, deriveQuantities, suggestedQuantities, applySuggestions } from "./domain/rooms.js";
+import {
+  TRADES, EMPTY_BOOK, ckey, newContractorRecord, upsertContractor, removeContractor,
+  rateContractor, directory, bookTotals, searchRows,
+} from "./domain/contractorBook.js";
 import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
-import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET, bucketStatus } from "./data/photos.js";
+import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET, bucketStatus,
+         uploadGalleryPhoto, deleteGalleryPhoto, galleryPublicUrl } from "./data/photos.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
 import {
   ProjectCover, StagePill, SectionHead, Frame, Meta, MetaGrid,
@@ -45,6 +52,7 @@ import {
   issueClientAccount, resetClientPassword, revokeClientAccount,
   issueContractorAccount, portalUrl, isPortalRoute,
 } from "./data/portal.js";
+import { routeOf, doorUrls, forgetEntry } from "./data/entry.js";
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS, officeLine } from "./domain/catalogue.js";
 import {
   newClient, resolveItem, calcClient, calcByPhase, migrateClient, progressFromVisits,
@@ -490,6 +498,9 @@ function AppInner() {
   const [priceBook, setPriceBook] = useState(DEFAULT_PRICEBOOK);
   const [tab, setTab] = useState("dashboard");
   const [section, setSection] = useState("office");   // office | clients | contractors
+  /* دفتر المقاولين: بيانات مكتب لا بيانات مشروع، فيُخزَّن مستقلًا
+     ويبقى بعد إغلاق المشاريع التي عمل فيها المقاول. */
+  const [contractorBook, setContractorBook] = useState(EMPTY_BOOK);
 
   /* ═══ اللغة ═══
      الاختيار محفوظ محليًا ويُطبَّق على عنصر <html> نفسه، فينقلب اتجاه
@@ -535,6 +546,7 @@ function AppInner() {
     const settingsVal = await storageGet("settings:global", DEFAULT_SETTINGS);
     setSettings(settingsVal);
     setPriceBook(await storageGet("settings:pricebook", DEFAULT_PRICEBOOK));
+    setContractorBook(await storageGet("settings:contractors", EMPTY_BOOK));
     const keys = await storageListKeys("client:");
     const loaded = [];
     for (const k of keys) {
@@ -1051,6 +1063,7 @@ function AppInner() {
             team={team}
             currentMember={currentMember}
             priceBook={priceBook}
+            contractorBook={contractorBook}
             allClients={clients}
             onBack={() => setSelectedId(null)}
             onChange={(patch) => updateClient(selected.id, patch)}
@@ -1091,7 +1104,18 @@ function AppInner() {
           <ContractorsRegistry
             clients={visibleClients}
             currentMember={currentMember}
+            book={contractorBook}
+            onSaveBook={async (next) => {
+              setContractorBook(next);
+              await storageSet("settings:contractors", next);
+            }}
             onOpenClient={(id) => { setSelectedId(id); setTab("clients"); setSection("clients"); }}
+            onAddContractor={(clientId, contractor) => {
+              const c = clients.find(x => x.id === clientId);
+              if (!c) return;
+              updateClient(clientId, { contractors: [...(c.contractors || []), contractor] });
+              showToast("أُضيف المقاول إلى " + (c.name || "المشروع"));
+            }}
           />
         )}
 
@@ -1303,6 +1327,98 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings, coverUrls = 
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════ معرض العميل ═══════════
+   ما يراه العميل في بوابته. مفصول عن صور التوثيق الداخلي في مساحة
+   معلنة، لأن بوابة العميل تُفتح بلا جلسة مستخدم فلا سبيل فيها لرابط
+   موقّت. والفصل يحمي الخصوصية: ما يُرفع هنا يعلم المكتب أنه معروض.
+
+   الترتيب مقصود أيضًا: أول صورة هي بطلة المعرض وتأخذ ضعف المساحة —
+   فيقرأ العميل مشهدًا لا شبكة مربّعات متساوية. */
+function ClientGallery({ client, onChange }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const gallery = client.gallery || [];
+
+  const pick = async (ev) => {
+    const files = Array.from(ev.target.files || []);
+    ev.target.value = "";
+    if (!files.length) return;
+    setBusy(true); setErr("");
+    const added = [];
+    for (const f of files) {
+      try { added.push(await uploadGalleryPhoto(client.id, f)); }
+      catch (ex) { setErr(ex.message); }
+    }
+    if (added.length) onChange({ gallery: [...gallery, ...added] });
+    setBusy(false);
+  };
+
+  const remove = async (item) => {
+    await deleteGalleryPhoto(item.path);
+    onChange({ gallery: gallery.filter(g => g.path !== item.path) });
+  };
+
+  const move = (i, dir) => {
+    const next = [...gallery];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange({ gallery: next });
+  };
+
+  if (!photosAvailable()) return null;
+
+  return (
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginTop: 22 }}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="h-section">معرض العميل</span>
+        <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy ? t("جاري الرفع…") : "إضافة صور"}
+        </button>
+      </div>
+      <div className="mb-3 text-[11px]" style={{ color: MUTED, lineHeight: 1.9 }}>
+        هذه الصور وحدها يراها العميل في بوابته. الأولى هي صورة الواجهة عنده.
+      </div>
+
+      {err && <div className="mb-2 text-[11px]" style={{ color: DANGER }}>{err}</div>}
+
+      {gallery.length === 0 ? (
+        <div className="py-8 text-center text-[12px]" style={{ color: MUTED }}>
+          لا صور بعد — ارفع لقطات التنفيذ أو مشاهد الريندر.
+        </div>
+      ) : (
+        <div className="gallery">
+          {gallery.map((g, i) => (
+            <div key={g.path} className="frame" style={{ cursor: "default" }}>
+              <img src={g.url || galleryPublicUrl(g.path)} alt="" loading="lazy" />
+              <div style={{ position: "absolute", insetInlineStart: 6, top: 6, display: "flex", gap: 4 }}>
+                <button onClick={() => move(i, -1)} title="تقديم"
+                        style={{ background: "rgba(10,9,8,.72)", color: "#fff", border: "none",
+                                 width: 26, height: 26, cursor: "pointer", fontSize: 13 }}>›</button>
+                <button onClick={() => move(i, 1)} title="تأخير"
+                        style={{ background: "rgba(10,9,8,.72)", color: "#fff", border: "none",
+                                 width: 26, height: 26, cursor: "pointer", fontSize: 13 }}>‹</button>
+                <button onClick={() => remove(g)} title="حذف"
+                        style={{ background: "rgba(158,43,34,.85)", color: "#fff", border: "none",
+                                 width: 26, height: 26, cursor: "pointer", fontSize: 13 }}>✕</button>
+              </div>
+              {i === 0 && (
+                <span style={{ position: "absolute", insetInlineEnd: 6, top: 6, background: "rgba(10,9,8,.72)",
+                               color: "#fff", fontSize: 9.5, padding: "3px 8px", letterSpacing: ".1em" }}>
+                  الواجهة
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pick} />
     </div>
   );
 }
@@ -2063,12 +2179,109 @@ export function CostAnalysis({ client, priceBook, currentMember }) {
 }
 
 /* ═══════════════════ حسابات مقاولي الباطن ═══════════════════ */
-export function ContractorLedger({ client, onChange }) {
+/* ═══════════ عامل باليومية ═══════════
+   الفرق عن المقاول ليس في الحجم بل في طبيعة الالتزام: المقاول متعاقد
+   بقيمة معلومة يُقاس عليها رصيده ومحتجزه، واليوميّة أجر يُدفع لقاء
+   أيام عمل انتهت. لذلك تُسجَّل هنا مصروفَ عمالة لا حسابًا جاريًا —
+   وتظهر فورًا في مقارنة المخطط بالفعلي تحت فئة «عمالة». */
+function DayLabourForm({ onSave, onCancel }) {
+  const [name, setName] = useState("");
+  const [rate, setRate] = useState("");
+  const [days, setDays] = useState("1");
+  const [phase, setPhase] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+
+  const total = (Number(rate) || 0) * (Number(days) || 0);
+  const canSave = name.trim().length > 1 && total > 0;
+
+  return (
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 16 }}>
+      <div className="h-section mb-3">عامل باليومية</div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block" style={{ flex: "1 1 150px" }}>
+          <span className="eyebrow">اسم العامل / المعلّم</span>
+          <input className="inp" value={name} onChange={e => setName(e.target.value)}
+                 placeholder="مثال: عم رجب — نقاشة" style={{ marginBottom: 0 }} />
+        </label>
+        <label className="block" style={{ width: 120 }}>
+          <span className="eyebrow">الأجر اليومي</span>
+          <input className="inp num" type="number" inputMode="decimal" value={rate}
+                 onChange={e => setRate(e.target.value)} style={{ marginBottom: 0 }} />
+        </label>
+        <label className="block" style={{ width: 90 }}>
+          <span className="eyebrow">عدد الأيام</span>
+          <input className="inp num" type="number" inputMode="decimal" value={days}
+                 onChange={e => setDays(e.target.value)} style={{ marginBottom: 0 }} />
+        </label>
+        <label className="block" style={{ width: 150 }}>
+          <span className="eyebrow">المرحلة</span>
+          <select className="inp" value={phase} onChange={e => setPhase(e.target.value)}
+                  style={{ marginBottom: 0 }}>
+            <option value="">— بلا مرحلة —</option>
+            {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+          </select>
+        </label>
+        <label className="block" style={{ width: 140 }}>
+          <span className="eyebrow">التاريخ</span>
+          <input className="inp" type="date" value={date}
+                 onChange={e => setDate(e.target.value)} style={{ marginBottom: 0 }} />
+        </label>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button className="btn btn-primary" disabled={!canSave}
+                onClick={() => onSave({ name: name.trim(), rate, days, phase, date })}>
+          حفظ المصروف
+        </button>
+        <button className="btn" onClick={onCancel}>إلغاء</button>
+        <span className="num" style={{ fontSize: 13 }}>
+          الإجمالي: <b>{fmt(total)}</b> {currency()}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function ContractorLedger({ client, book, onChange }) {
   const led = useMemo(() => contractorLedger(client), [client]);
+  const [dayForm, setDayForm] = useState(false);
+
+  /* الدفتر هو المصدر: المكتب يسجّل المقاول مرة واحدة باسمه وهاتفه،
+     ثم يختاره في كل مشروع بدل أن يعيد كتابة اسمه — فلا يتفرّق الاسم
+     إلى صيغتين ولا ينقسم حسابه الجاري إلى حسابين. */
+  const known = useMemo(() => directory(book, []), [book]);
+  const already = new Set((client.contractors || []).map(k => ckey(k.name)));
 
   const add = () => {
     const list = [...(client.contractors || [])];
     onChange({ contractors: [...list, newContractor(client.id, list.length + 1)] });
+  };
+
+  const addFromBook = (key) => {
+    const rec = known.find(r => r.key === key);
+    if (!rec) return;
+    const list = [...(client.contractors || [])];
+    onChange({ contractors: [...list, {
+      ...newContractor(client.id, list.length + 1),
+      name: rec.name,
+      trade: rec.trades[0] || "",
+    }] });
+  };
+
+  /* عامل باليومية ليس مقاولًا: لا تعاقد له فلا رصيد ولا محتجز ضمان.
+     يُسجَّل مصروف عمالة مباشرة، فيدخل في مقارنة المخطط بالفعلي
+     ولا يُفسد حسابات المقاولين بصفوف بلا قيمة تعاقد. */
+  const addDayLabour = ({ name, rate, days, phase, date }) => {
+    const list = [...(client.expenses || [])];
+    const e = newExpense(client.id, list.length + 1, phase, "labour");
+    onChange({ expenses: [...list, {
+      ...e,
+      date: date || e.date,
+      vendor: name,
+      amount: (Number(rate) || 0) * (Number(days) || 0),
+      note: `يومية ${fmt(Number(rate) || 0)} × ${Number(days) || 0} يوم`,
+    }] });
+    setDayForm(false);
   };
   const patch = (id, p) =>
     onChange({ contractors: (client.contractors || []).map(k => k.id === id ? { ...k, ...p } : k) });
@@ -2078,9 +2291,32 @@ export function ContractorLedger({ client, onChange }) {
   return (
     <div className="sheet p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="h-section">حسابات مقاولي الباطن</span>
-        <button onClick={add} className="btn btn-primary"><Plus size={14} /> مقاول</button>
+        <span className="h-section">حسابات مقاولي الباطن والعمالة</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="inp" style={{ width: 210, marginBottom: 0 }} value=""
+                  onChange={e => { if (e.target.value) addFromBook(e.target.value); }}>
+            <option value="">— اختر من دفتر المقاولين —</option>
+            {known.filter(r => !already.has(r.key)).map(r => (
+              <option key={r.key} value={r.key}>
+                {r.name}{r.trades.length ? ` · ${r.trades[0]}` : ""}{r.phone ? ` · ${r.phone}` : ""}
+              </option>
+            ))}
+          </select>
+          <button onClick={() => setDayForm(v => !v)} className="btn">
+            <Plus size={14} /> عامل باليومية
+          </button>
+          <button onClick={add} className="btn btn-primary"><Plus size={14} /> مقاول جديد</button>
+        </div>
       </div>
+
+      {known.length === 0 && (
+        <div className="mb-3 text-[11px]" style={{ color: MUTED }}>
+          دفتر المقاولين فارغ — سجّل مقاوليك مرة واحدة من قسم «المقاولون» باسمهم وهاتفهم،
+          ثم اخترهم هنا في كل مشروع.
+        </div>
+      )}
+
+      {dayForm && <DayLabourForm onSave={addDayLabour} onCancel={() => setDayForm(false)} />}
 
       {led.rows.length === 0 ? (
         <div className="py-3 text-center text-xs text-muted">
@@ -2404,140 +2640,386 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
    المقاول الواحد يعمل غالبًا في أكثر من مشروع، وحساباته كانت مبعثرة
    داخل صفحة كل عميل. هنا يُجمَع بالاسم: كم تعاقد معه إجمالًا، وكم صُرف،
    وكم محتجز لديك، وأين تجاوز. هذا سؤال المكتب لا سؤال المشروع. */
-export function ContractorsRegistry({ clients, currentMember, onOpenClient }) {
-  const [q, setQ] = useState("");
-  const maySeeCost = can(currentMember, "viewCostBasis");
+/* ═══════════ إضافة مقاول من قسم المقاولين ═══════════
+   المقاول لا يعيش وحده في النظام: هو طرف في مشروع بقيمة تعاقد
+   ومحتجز ضمان. لذلك يطلب النموذج المشروع أولًا — إضافة مقاول بلا
+   مشروع تنتج اسمًا معلّقًا بلا حساب جارٍ ولا معنى.
 
-  const registry = useMemo(() => {
-    const byName = new Map();
-    for (const c of clients || []) {
-      const led = contractorLedger(c);
-      for (const k of led.rows) {
-        const key = (k.name || "").trim() || k.id;
-        if (!byName.has(key)) {
-          byName.set(key, {
-            name: key, trades: new Set(), projects: [],
-            contracted: 0, paid: 0, retained: 0, certified: 0, remaining: 0, overCount: 0,
-          });
-        }
-        const r = byName.get(key);
-        if (k.trade) r.trades.add(k.trade);
-        r.projects.push({ clientId: c.id, clientName: c.name || "بدون اسم", phase: k.phase, ...k });
-        r.contracted += k.contractValue; r.paid += k.paid;
-        r.retained += k.retained; r.certified += k.certified; r.remaining += k.remaining;
-        if (k.overCertified) r.overCount++;
-      }
-    }
-    return [...byName.values()].sort((a, b) => b.contracted - a.contracted);
-  }, [clients]);
+   ولمن يعمل في عدة مشاريع: أضفه في كل مشروع بنفس الاسم، فيجمعه
+   السجل تلقائيًا في بطاقة واحدة، ويكفيه حساب دخول واحد. */
+function NewContractorForm({ clients, onSave, onCancel, fixedName = "" }) {
+  const [clientId, setClientId] = useState(clients[0]?.id || "");
+  const [name, setName] = useState(fixedName);
+  const [trade, setTrade] = useState("");
+  const [phase, setPhase] = useState("");
+  const [value, setValue] = useState("");
+  const [retention, setRetention] = useState(5);
 
-  const totals = registry.reduce((t, r) => ({
-    contracted: t.contracted + r.contracted, paid: t.paid + r.paid,
-    retained: t.retained + r.retained, remaining: t.remaining + r.remaining,
-  }), { contracted: 0, paid: 0, retained: 0, remaining: 0 });
+  const client = clients.find(c => c.id === clientId);
+  const canSave = !!clientId && name.trim().length > 1;
 
-  const visible = registry.filter(r =>
-    !q.trim() || r.name.includes(q.trim()) || [...r.trades].some(t => t.includes(q.trim())));
-
-  if (!maySeeCost) {
-    return <div className="sheet p-6 text-center text-sm text-muted">
-      حسابات المقاولين متاحة لمالك المكتب أو مدير المشاريع فقط.
-    </div>;
-  }
+  const save = () => {
+    if (!canSave) return;
+    const seq = (client?.contractors || []).length + 1;
+    const k = newContractor(clientId, seq, phase);
+    onSave(clientId, {
+      ...k,
+      name: name.trim(),
+      trade: trade.trim(),
+      contractValue: Number(value) || 0,
+      retentionPct: (Number(retention) || 0) / 100,
+    });
+  };
 
   return (
-    <div>
-      <SectionHead title="المقاولون"
-                   subtitle="حسابات مقاولي الباطن مجمّعة عبر كل مشاريع المكتب"
-                   seed="contractors-section" height={104} />
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 14, marginBottom: 18 }}>
+      <div className="h-section mb-3">{t("مقاول جديد")}</div>
 
-      {registry.length === 0 ? (
-        <div className="sheet p-8 text-center">
-          <div className="text-sm font-bold" style={{ color: INK }}>لا يوجد مقاولون مسجّلون بعد</div>
-          <div className="mt-1 text-xs text-muted">
-            أضف المقاول من تبويب «المالية» داخل صفحة العميل، وسيظهر هنا مجمّعًا عبر كل مشاريعه.
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[["قيمة التعاقدات", totals.contracted, CLAY],
-              ["المصروف", totals.paid, INK],
-              ["محتجز الضمان", totals.retained, COPPER],
-              ["المتبقي لهم", totals.remaining, SAGE]].map(([lbl, val, col]) => (
-              <div key={lbl} className="sheet p-3 text-center">
-                <div className="lbl">{lbl}</div>
-                <div className="num text-lg font-bold" style={{ color: col }}>{fmt(val)}</div>
-              </div>
-            ))}
-          </div>
+      <div className="grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
+        <label className="block">
+          <span className="eyebrow">{t("المشروع")}</span>
+          <select className="inp" value={clientId} onChange={e => setClientId(e.target.value)}>
+            {clients.length === 0 && <option value="">— لا يوجد مشاريع —</option>}
+            {clients.map(c => <option key={c.id} value={c.id}>{c.name || t("بدون اسم")}</option>)}
+          </select>
+        </label>
 
-          <input className="inp mb-3" placeholder="بحث بالاسم أو الصنعة…"
-                 value={q} onChange={e => setQ(e.target.value)} />
+        <label className="block">
+          <span className="eyebrow">{t("اسم المقاول")}</span>
+          <input className="inp" value={name} onChange={e => setName(e.target.value)}
+                 placeholder="مثال: حسن السيد" disabled={!!fixedName} />
+        </label>
 
-          <div className="flex flex-col gap-2">
-            {visible.map(r => (
-              <div key={r.name} className="sheet p-4"
-                   style={{ borderColor: r.overCount > 0 ? DANGER : undefined }}>
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div>
-                    <span className="text-sm font-bold" style={{ color: INK }}>{r.name}</span>
-                    {r.trades.size > 0 && (
-                      <span className="mr-2 text-[11px] text-muted">{[...r.trades].join(" · ")}</span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-muted">
-                    {r.projects.length} {r.projects.length === 1 ? "مشروع" : "مشاريع"}
-                  </span>
-                </div>
+        <label className="block">
+          <span className="eyebrow">{t("الصنعة")}</span>
+          <input className="inp" value={trade} onChange={e => setTrade(e.target.value)}
+                 placeholder="محارة · كهرباء · نجارة" />
+        </label>
 
-                <div className="mt-2 h-1.5 w-full" style={{ backgroundColor: STONE }}>
-                  <div style={{ height: 6, backgroundColor: r.overCount > 0 ? DANGER : SAGE,
-                                width: `${r.contracted > 0 ? Math.min(100, (r.certified / r.contracted) * 100) : 0}%` }} />
-                </div>
-                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
-                  <span className="text-muted">تعاقد <b className="num">{fmt(r.contracted)}</b></span>
-                  <span className="text-muted">مصروف <b className="num">{fmt(r.paid)}</b></span>
-                  <span style={{ color: COPPER }}>محتجز <b className="num">{fmt(r.retained)}</b></span>
-                  <span style={{ color: r.remaining < 0 ? DANGER : SAGE }}>
-                    متبقٍ <b className="num">{fmt(r.remaining)}</b>
-                  </span>
-                </div>
+        <label className="block">
+          <span className="eyebrow">{t("المرحلة")}</span>
+          <select className="inp" value={phase} onChange={e => setPhase(e.target.value)}>
+            <option value="">— بلا مرحلة —</option>
+            {PHASES.map(p => <option key={p} value={p}>{t(p)}</option>)}
+          </select>
+        </label>
 
-                {r.overCount > 0 && (
-                  <div className="mt-1.5 text-[11px] font-bold" style={{ color: DANGER }}>
-                    ⛔ تجاوز قيمة التعاقد في {r.overCount} {r.overCount === 1 ? "مشروع" : "مشاريع"}
-                  </div>
-                )}
+        <label className="block">
+          <span className="eyebrow">{t("قيمة التعاقد")}</span>
+          <input className="inp num" type="number" inputMode="decimal" value={value}
+                 onChange={e => setValue(e.target.value)} placeholder="0" />
+        </label>
 
-                {/* حساب دخول المقاول: مفتاحه اسمه، فيرى أعماله في كل
-                    المشاريع بحساب واحد لا حسابًا لكل مشروع */}
-                <PortalAccessPanel kind="contractor" id={r.name} name={r.name}
-                                   onError={(m) => window.alert(m)} />
+        <label className="block">
+          <span className="eyebrow">{t("نسبة محتجز الضمان")} %</span>
+          <input className="inp num" type="number" inputMode="decimal" value={retention}
+                 onChange={e => setRetention(e.target.value)} />
+        </label>
+      </div>
 
-                <div className="mt-2 flex flex-wrap gap-1.5 border-t pt-2" style={{ borderColor: BORDER }}>
-                  {r.projects.map((p, i) => (
-                    <button key={i} onClick={() => onOpenClient(p.clientId)}
-                            className="rounded-md px-2.5 py-1 text-[11px] font-semibold"
-                            style={{ border: `1px solid ${BORDER}`, color: CLAY }}>
-                      {p.clientName}
-                      {p.phase && <span className="mr-1 text-muted">· {PHASE_SHORT[p.phase] || p.phase}</span>}
-                      <span className="num mr-1.5" style={{ color: p.overCertified ? DANGER : MUTED }}>
-                        {fmt(p.certified)}/{fmt(p.contractValue)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button className="btn btn-primary" disabled={!canSave} onClick={save}>{t("حفظ")}</button>
+        <button className="btn" onClick={onCancel}>{t("إلغاء")}</button>
+        {!canSave && (
+          <span style={{ fontSize: 11, color: MUTED }}>
+            اختر المشروع واكتب اسم المقاول
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
-function FinancePanel({ client, settings, priceBook, currentMember, onChange }) {
+/* ═══════════ النجوم ═══════════
+   التقييم رأي المكتب لا حساب آلي، فهو قابل للضغط مباشرة.
+   صفر نجوم يعني «لم يُقيَّم» ويظهر مختلفًا عن نجمة واحدة. */
+function Stars({ value = 0, onChange, size = 15 }) {
+  const v = Math.max(0, Math.min(5, Math.round(Number(value) || 0)));
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
+      {[1, 2, 3, 4, 5].map(n => (
+        <button key={n} type="button" title={`${n} من ٥`}
+                onClick={onChange ? (e) => { e.stopPropagation(); onChange(n === v ? 0 : n); } : undefined}
+                style={{
+                  background: "none", border: "none", padding: 0, lineHeight: 1,
+                  cursor: onChange ? "pointer" : "default",
+                  color: n <= v ? COPPER : "#D9D6D0", fontSize: size,
+                }}>★</button>
+      ))}
+      {v === 0 && <span style={{ fontSize: 10, color: MUTED, marginInlineStart: 6 }}>لم يُقيَّم</span>}
+    </span>
+  );
+}
+
+/* ═══════════ سجل مقاول في الدفتر ═══════════ */
+function ContractorRecordForm({ initial, onSave, onCancel, onDelete }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [phone, setPhone] = useState(initial?.phone || "");
+  const [trades, setTrades] = useState(initial?.trades || []);
+  const [rating, setRating] = useState(initial?.rating || 0);
+  const [notes, setNotes] = useState(initial?.notes || "");
+
+  const toggle = (tr) =>
+    setTrades(list => list.includes(tr) ? list.filter(x => x !== tr) : [...list, tr]);
+
+  return (
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 14, marginBottom: 20 }}>
+      <div className="h-section mb-3">{initial ? t("تعديل بيانات المقاول") : t("مقاول جديد")}</div>
+
+      <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2">
+        <label className="block">
+          <span className="eyebrow">{t("اسم المقاول")}</span>
+          <input className="inp" value={name} onChange={e => setName(e.target.value)}
+                 placeholder="مثال: حسن السيد" disabled={!!initial} />
+        </label>
+        <label className="block">
+          <span className="eyebrow">{t("رقم الهاتف")}</span>
+          <input className="inp num" value={phone} onChange={e => setPhone(e.target.value)}
+                 inputMode="tel" placeholder="01xxxxxxxxx" dir="ltr" />
+        </label>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <span className="eyebrow">{t("الصنائع التي يعمل بها")}</span>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {TRADES.map(tr => {
+            const on = trades.includes(tr);
+            return (
+              <button key={tr} type="button" onClick={() => toggle(tr)}
+                      style={{
+                        padding: "5px 11px", fontSize: 11.5, minHeight: 32,
+                        border: `1px solid ${on ? INK : BORDER}`,
+                        backgroundColor: on ? INK : "transparent",
+                        color: on ? "#FFFFFF" : MUTED, cursor: "pointer",
+                      }}>{tr}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <span className="eyebrow">{t("التقييم")}</span>
+        <Stars value={rating} onChange={setRating} size={19} />
+      </div>
+
+      <label className="block" style={{ marginTop: 10 }}>
+        <span className="eyebrow">{t("ملاحظات")}</span>
+        <input className="inp" value={notes} onChange={e => setNotes(e.target.value)}
+               placeholder="التزامه بالمواعيد · جودة التشطيب · طريقة الحساب" />
+      </label>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button className="btn btn-primary" disabled={name.trim().length < 2}
+                onClick={() => onSave({ name: name.trim(), phone: phone.trim(), trades, rating, notes })}>
+          {t("حفظ")}
+        </button>
+        <button className="btn" onClick={onCancel}>{t("إلغاء")}</button>
+        {initial && onDelete && (
+          <button className="btn" style={{ color: DANGER, borderColor: DANGER }} onClick={onDelete}>
+            {t("حذف من الدفتر")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ دفتر المقاولين ═══════════
+   ما يجيب عنه هذا القسم في ثلاث نظرات:
+     مَن أعرف من الصنّاع؟ (اسم · هاتف · صنعة · تقييم)
+     كم له وكم عليه؟      (حساب جارٍ لكل مشروع على حدة)
+     وهل تجاوز تعاقده؟    (يُرصد بالأحمر قبل أن يتحوّل لنزاع)
+
+   المقاول الذي عمل في مشروع ولم يُسجَّل في الدفتر يظهر هنا تلقائيًا —
+   لا يضيع أحد لأن أحدًا نسي أن يملأ استمارة. */
+export function ContractorsRegistry({
+  clients, currentMember, onOpenClient, onAddContractor, book, onSaveBook,
+}) {
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editKey, setEditKey] = useState(null);
+  const [assignKey, setAssignKey] = useState(null);
+  const [openKey, setOpenKey] = useState(null);
+  const maySeeCost = can(currentMember, "viewCostBasis");
+
+  const rows = useMemo(() => directory(book, clients), [book, clients]);
+  const visible = useMemo(() => searchRows(rows, q), [rows, q]);
+  const totals = useMemo(() => bookTotals(rows), [rows]);
+
+  if (!maySeeCost) {
+    return <div className="py-16 text-center text-sm" style={{ color: MUTED, borderTop: `1px solid ${BORDER}` }}>
+      دفتر المقاولين متاح لمالك المكتب أو مدير المشاريع فقط.
+    </div>;
+  }
+
+  const saveRecord = (rec) => {
+    onSaveBook(upsertContractor(book, rec));
+    setAdding(false); setEditKey(null);
+  };
+
+  return (
+    <div>
+      <SectionHead eyebrow={`${rows.length}`}
+                   title={t("المقاولون")}
+                   subtitle="دفتر المكتب — هاتف وصنعة وتقييم وحساب جارٍ في كل مشروع">
+        <button className="btn btn-primary" onClick={() => { setAdding(v => !v); setEditKey(null); }}>
+          <Plus size={15} /> {adding ? t("إلغاء") : t("مقاول جديد")}
+        </button>
+      </SectionHead>
+
+      <div className="mb-8 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard label="عدد المقاولين" value={totals.contractors} />
+        <StatCard label="قيمة التعاقدات" value={fmt(totals.contracted)} sub={currency()} />
+        <StatCard label="المصروف" value={fmt(totals.paid)} sub={currency()} />
+        <StatCard label="محتجز الضمان" value={fmt(totals.retained)} sub={currency()} accent={COPPER} />
+        <StatCard label="المتبقي لهم" value={fmt(totals.remaining)} sub={currency()} accent={SAGE} />
+      </div>
+
+      {adding && <ContractorRecordForm onSave={saveRecord} onCancel={() => setAdding(false)} />}
+
+      <input className="inp mb-6" placeholder="بحث بالاسم أو الهاتف أو الصنعة أو المشروع…"
+             value={q} onChange={e => setQ(e.target.value)} />
+
+      {visible.length === 0 && (
+        <div className="py-16 text-center text-sm" style={{ color: MUTED, borderTop: `1px solid ${BORDER}` }}>
+          {rows.length === 0
+            ? "لا يوجد مقاولون بعد — اضغط «مقاول جديد» أو أسند مقاولًا داخل مشروع."
+            : "لا نتائج مطابقة لهذا البحث."}
+        </div>
+      )}
+
+      {visible.map(r => {
+        const open = openKey === r.key;
+        return (
+          <div key={r.key} style={{ borderTop: `1px solid ${INK}`, paddingTop: 13, marginBottom: 26 }}>
+            {/* ── الترويسة: الاسم والتقييم والهاتف ── */}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div style={{ minWidth: 0 }}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span style={{ fontSize: 17, fontWeight: 500 }}>{r.name}</span>
+                  <Stars value={r.rating} onChange={(n) => onSaveBook(rateContractor(
+                    upsertContractor(book, { key: r.key, name: r.name, phone: r.phone, trades: r.trades }),
+                    r.key, n))} />
+                  {!r.inBook && (
+                    <span className="eyebrow" style={{ color: COPPER }}>غير مسجّل في الدفتر</span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {r.phone
+                    ? <a href={`tel:${r.phone}`} className="num" dir="ltr"
+                         style={{ fontSize: 13, color: INK, textDecoration: "none", borderBottom: `1px solid ${BORDER}` }}>
+                        {r.phone}
+                      </a>
+                    : <span className="eyebrow">بلا رقم هاتف</span>}
+                  {r.trades.length > 0 && (
+                    <span style={{ fontSize: 11.5, color: MUTED }}>{r.trades.join(" · ")}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button className="btn" style={{ minHeight: 36, padding: "7px 12px" }}
+                        onClick={() => { setEditKey(editKey === r.key ? null : r.key); setAssignKey(null); }}>
+                  {t("تعديل")}
+                </button>
+                {onAddContractor && (
+                  <button className="btn" style={{ minHeight: 36, padding: "7px 12px" }}
+                          onClick={() => { setAssignKey(assignKey === r.key ? null : r.key); setEditKey(null); }}>
+                    {t("إسناد لمشروع")}
+                  </button>
+                )}
+                <button className="btn" style={{ minHeight: 36, padding: "7px 12px" }}
+                        onClick={() => setOpenKey(open ? null : r.key)}>
+                  {open ? t("إخفاء الحساب") : t("الحساب الجاري")}
+                </button>
+              </div>
+            </div>
+
+            {/* ── الأرقام المجمّعة ── */}
+            <MetaGrid cols={4} style={{ columnGap: 16, marginTop: 12 }} items={[
+              { label: "قيمة التعاقدات", value: fmt(r.totals.contracted) },
+              { label: "المصروف", value: fmt(r.totals.paid) },
+              { label: "محتجز الضمان", value: fmt(r.totals.retained), color: COPPER },
+              { label: "المتبقي له", value: fmt(r.totals.remaining),
+                color: r.totals.remaining < 0 ? DANGER : SAGE },
+            ]} />
+
+            {r.overCount > 0 && (
+              <div className="mt-2 text-[11.5px]" style={{ color: DANGER, fontWeight: 500 }}>
+                تجاوز قيمة التعاقد في {r.overCount} {r.overCount === 1 ? "مشروع" : "مشاريع"}
+              </div>
+            )}
+
+            {r.notes && <div className="mt-2 text-[11.5px]" style={{ color: MUTED }}>{r.notes}</div>}
+
+            {editKey === r.key && (
+              <ContractorRecordForm
+                initial={r}
+                onSave={saveRecord}
+                onCancel={() => setEditKey(null)}
+                onDelete={() => { onSaveBook(removeContractor(book, r.key)); setEditKey(null); }} />
+            )}
+
+            {assignKey === r.key && onAddContractor && (
+              <NewContractorForm clients={clients} fixedName={r.name}
+                                 onCancel={() => setAssignKey(null)}
+                                 onSave={(clientId, contractor) => {
+                                   onAddContractor(clientId, contractor);
+                                   setAssignKey(null);
+                                 }} />
+            )}
+
+            {/* ── الحساب الجاري: سطر لكل مشروع ── */}
+            {open && (
+              <div className="mt-4">
+                {r.projects.length === 0
+                  ? <div className="text-[12px]" style={{ color: MUTED }}>لم يُسند إليه عمل بعد.</div>
+                  : (
+                    <table className="editorial">
+                      <thead><tr>
+                        <th>{t("المشروع")}</th>
+                        <th>{t("المرحلة")}</th>
+                        <th style={{ textAlign: "end" }}>{t("قيمة التعاقد")}</th>
+                        <th style={{ textAlign: "end" }}>{t("المصروف")}</th>
+                        <th style={{ textAlign: "end" }}>{t("محتجز")}</th>
+                        <th style={{ textAlign: "end" }}>{t("الرصيد")}</th>
+                      </tr></thead>
+                      <tbody>
+                        {r.projects.map((p, i) => (
+                          <tr key={i}>
+                            <td>
+                              <button onClick={() => onOpenClient(p.clientId)}
+                                      style={{ background: "none", border: "none", padding: 0,
+                                               cursor: "pointer", color: INK, textDecoration: "underline" }}>
+                                {p.clientName}
+                              </button>
+                            </td>
+                            <td style={{ color: MUTED, fontSize: 11.5 }}>{p.phase ? (PHASE_SHORT[p.phase] || p.phase) : "—"}</td>
+                            <td className="num" style={{ textAlign: "end" }}>{fmt(p.contractValue)}</td>
+                            <td className="num" style={{ textAlign: "end" }}>{fmt(p.paid)}</td>
+                            <td className="num" style={{ textAlign: "end", color: COPPER }}>{fmt(p.retained)}</td>
+                            <td className="num" style={{ textAlign: "end", fontWeight: 600,
+                                     color: p.remaining < 0 ? DANGER : p.settled ? SAGE : INK }}>
+                              {fmt(p.remaining)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+              </div>
+            )}
+
+            <PortalAccessPanel kind="contractor" id={r.key} name={r.name}
+                               onError={(m) => window.alert(m)} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FinancePanel({ client, settings, priceBook, contractorBook, currentMember, onChange }) {
   const maySeeCost = can(currentMember, "viewCostBasis");
   const cv = contractValue(client);
 
@@ -2650,7 +3132,7 @@ function FinancePanel({ client, settings, priceBook, currentMember, onChange }) 
       </div>
 
       {/* المقاولون ومصروفات الموقع — للمالك والمدير فقط */}
-      {maySeeCost && <ContractorLedger client={client} onChange={onChange} />}
+      {maySeeCost && <ContractorLedger client={client} book={contractorBook} onChange={onChange} />}
       {maySeeCost && (
         <PhaseSpend client={client} settings={settings} priceBook={priceBook} onChange={onChange} />
       )}
@@ -2658,7 +3140,7 @@ function FinancePanel({ client, settings, priceBook, currentMember, onChange }) 
   );
 }
 
-function ClientDetail({ client, settings, priceBook, allClients, saving, team, currentMember, onBack, onChange, onDelete }) {
+function ClientDetail({ client, settings, priceBook, contractorBook, allClients, saving, team, currentMember, onBack, onChange, onDelete }) {
   const calc = useMemo(() => effectiveTotals(client, settings), [client, settings]);
   const margin = useMemo(() => {
     if (!can(currentMember, "viewCostBasis")) return null;
@@ -2765,6 +3247,13 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
           <PortalAccessPanel kind="client" id={client.id} name={client.name}
                              onError={(m) => window.alert(m)} />
 
+          <ClientGallery client={client} onChange={onChange} />
+
+          <button className="btn mt-4 w-full"
+                  onClick={() => window.open(`${doorUrls().base}?preview=client&id=${client.id}`, "_blank", "noopener")}>
+            معاينة بوابة العميل
+          </button>
+
           <button onClick={exportExcel} className="btn mt-5 w-full">
             <Download size={15} /> {t("تصدير")} — Excel
           </button>
@@ -2811,6 +3300,7 @@ function ClientDetail({ client, settings, priceBook, allClients, saving, team, c
               client={client}
               settings={settings}
               priceBook={priceBook}
+              contractorBook={contractorBook}
               currentMember={currentMember}
               onChange={onChange}
             />
@@ -3576,6 +4066,13 @@ function SystemCheck() {
     out.push({ k: "المزامنة السحابية", ok: cloud,
                v: cloud ? "مفعّلة" : "محلي — الحسابات ورفع الصور تحتاجها" });
 
+    /* أي مشروع Supabase تخاطبه الأداة فعلًا؟
+       سؤال يبدو تافهًا حتى تُشغَّل الهجرة في مشروع والأداة تخاطب آخر —
+       عندها تقول الأداة «الدالة غير موجودة» ويقول المكتب «شغّلتها». */
+    const cfgUrl = (getCloudConfig() || {}).url || "";
+    out.push({ k: "مشروع Supabase المرتبط", ok: !!cfgUrl,
+               v: cfgUrl || "غير محدّد — قارنه بالمشروع الذي شغّلت فيه ملفات الهجرة" });
+
     const st = await bucketStatus();
     out.push({ k: "مساحة الصور", ok: st.ok, v: st.message });
 
@@ -3589,11 +4086,14 @@ function SystemCheck() {
       if (!cloud || !sb) { out.push({ k: label, ok: false, v: "تحتاج المزامنة السحابية" }); continue; }
       try {
         const { error } = await withTimeout(sb.rpc(fn), 12000);
+        /* رسالة الخادم تُعرض كما هي بجوار التفسير: إخفاؤها هو ما جعل
+           التشخيص السابق مضلّلًا حين كانت الهجرة مُشغَّلة فعلًا. */
         out.push(error
-          ? { k: label, ok: false, v: `شغّل ${file} في Supabase` }
+          ? { k: label, ok: false,
+              v: `شغّل ${file}، وإن كنت شغّلته فشغّل: notify pgrst, 'reload schema';  — رسالة الخادم: ${error.message}` }
           : { k: label, ok: true, v: "جاهزة" });
-      } catch {
-        out.push({ k: label, ok: false, v: `شغّل ${file} في Supabase` });
+      } catch (e) {
+        out.push({ k: label, ok: false, v: `تعذّر الفحص — ${e.message || "بلا رسالة"}` });
       }
     }
 
@@ -3787,6 +4287,17 @@ alter publication supabase_realtime add table profiles;`;
       <h2 className="mb-4 text-xl font-bold text-navy">الإعدادات العامة</h2>
 
       <SystemCheck />
+
+      {/* صورة الصفحة الافتتاحية: أول ما يراه من يفتح رابط المكتب */}
+      <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 24 }}>
+        <div className="h-section mb-2">صورة الصفحة الافتتاحية</div>
+        <div className="mb-2 text-[11px]" style={{ color: MUTED, lineHeight: 1.9 }}>
+          الصورة العريضة أعلى صفحة الدخول التي يفتحها العملاء والمقاولون.
+          الصق رابط صورة (مشهد ريندر أو لقطة مشروع منجَز).
+        </div>
+        <input className="inp" placeholder="https://…" value={local.landingImage || ""}
+               onChange={e => setLocal({ ...local, landingImage: e.target.value })} />
+      </div>
 
       <div className="sheet p-4">
         <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
@@ -4338,15 +4849,40 @@ export default function App() {
     if (!("indexedDB" in window)) setSupported(false);
   }, []);
 
-  /* ═══ بوابة العميل والمقاول ═══
-     نفس الموقع بمعامل واحد في الرابط (‎?portal=1‎). لا نطاق جديد ولا
-     استضافة ثانية ولا نسخة يجب تحديثها مرتين — والبوابة تُحمَّل عند
-     طلبها فقط فلا تُثقل تحميل أداة المكتب. */
-  if (isPortalRoute()) {
+  /* ═══ الأبواب الثلاثة ═══
+     موقع واحد يخدم ثلاث فئات، ولكل فئة رابطها:
+       ?app=1            فريق المكتب
+       ?portal=client    العميل
+       ?portal=contractor المقاول
+     ومن يفتح الجذر بلا معامل يرى الصفحة الافتتاحية فيختار بابه.
+     كل بوابة تُحمَّل عند طلبها وحدها فلا تُثقل الأخرى. */
+  const route = routeOf();
+
+  if (route === "client" || route === "contractor") {
     return (
       <ErrorBoundary>
         <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#83807A" }}>…</div>}>
-          <Portal />
+          <Portal kindHint={route} />
+        </React.Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  if (route === "preview") {
+    return (
+      <ErrorBoundary>
+        <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#83807A" }}>…</div>}>
+          <PortalPreview />
+        </React.Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  if (route === "landing") {
+    return (
+      <ErrorBoundary>
+        <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#83807A" }}>…</div>}>
+          <Landing />
         </React.Suspense>
       </ErrorBoundary>
     );
