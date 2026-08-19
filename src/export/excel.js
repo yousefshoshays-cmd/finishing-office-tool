@@ -1,8 +1,22 @@
 let _ExcelJS = null;
-const ExcelJSLib = async () => (_ExcelJS ||= await import("exceljs"));
+const ExcelJSLib = async () => {
+  const m = (_ExcelJS ||= await import("exceljs"));
+  /* ExcelJS مكتبة CommonJS: في المتصفح تصل داخل default بعد التجميع،
+     وفي node تصل مباشرة. الاعتماد على شكل واحد كان يجعل كل تصديرات
+     الإكسل تفشل في المتصفح وحده — بينما تنجح في الاختبارات، فيبقى
+     العطل خفيًا. هنا نقبل الشكلين. */
+  return m?.Workbook ? m : (m?.default?.Workbook ? m.default : m);
+};
 /* file-saver يُحمَّل عند الحفظ فقط: يلمس window عند الاستيراد، فاستيراده
    في المستوى الأعلى كان يمنع اختبار بناء الملف خارج المتصفح. */
-const saveAs = async (...a) => (await import("file-saver")).saveAs(...a);
+const saveAs = async (...a) => {
+  const m = await import("file-saver");
+  /* نفس فخّ ExcelJS: file-saver مكتبة CommonJS تصل داخل default بعد
+     التجميع للمتصفح. الشكل الواحد كان يُسقط حفظ الملف بعد بنائه سليمًا. */
+  const fn = m?.saveAs || m?.default?.saveAs || m?.default;
+  if (typeof fn !== "function") throw new Error("تعذّر حفظ الملف — أعد تحميل الصفحة");
+  return fn(...a);
+};
 import { ITEMS, SPECS, fmt, DEFAULT_SETTINGS } from "../domain/catalogue.js";
 import { resolveItem, calcClient, calcByPhase } from "../domain/pricing.js";
 import { phasePaymentPlan, phaseBudget, plannedVsActual, contractorLedger, itemActualCost } from "../domain/finance.js";

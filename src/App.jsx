@@ -1105,6 +1105,7 @@ function AppInner() {
             clients={visibleClients}
             currentMember={currentMember}
             book={contractorBook}
+            brand={{ name: settings?.officeName, image: settings?.landingImage }}
             onSaveBook={async (next) => {
               setContractorBook(next);
               await storageSet("settings:contractors", next);
@@ -1538,12 +1539,14 @@ function ProjectHeader({ client, coverUrl, calc, onChange }) {
 
    كلمة السر تظهر مرة واحدة لأنها لا تُخزَّن أصلًا — يُخزَّن تجزيؤها.
    من نسيها يحصل على واحدة جديدة، ولا تُسترجع القديمة أبدًا. */
-function PortalAccessPanel({ kind, id, name, onError }) {
+function PortalAccessPanel({ kind, id, name, onError, brand = {} }) {
   const [cred, setCred] = useState(null);
   const [busy, setBusy] = useState("");
   const [copied, setCopied] = useState("");
 
-  const link = portalUrl();
+  /* الرابط يحمل هوية المكتب معه، فتظهر صفحة الدخول باسم المكتب
+     وصورته بدل صفحة بيضاء لا تدلّ على أحد. */
+  const link = portalUrl(kind, brand);
   const run = async (what) => {
     setBusy(what); setCred(null);
     try {
@@ -2833,7 +2836,7 @@ function ContractorRecordForm({ initial, onSave, onCancel, onDelete }) {
    المقاول الذي عمل في مشروع ولم يُسجَّل في الدفتر يظهر هنا تلقائيًا —
    لا يضيع أحد لأن أحدًا نسي أن يملأ استمارة. */
 export function ContractorsRegistry({
-  clients, currentMember, onOpenClient, onAddContractor, book, onSaveBook,
+  clients, currentMember, onOpenClient, onAddContractor, book, onSaveBook, brand = {},
 }) {
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
@@ -3011,6 +3014,7 @@ export function ContractorsRegistry({
             )}
 
             <PortalAccessPanel kind="contractor" id={r.key} name={r.name}
+                               brand={brand}
                                onError={(m) => window.alert(m)} />
           </div>
         );
@@ -3245,6 +3249,7 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
           </div>
 
           <PortalAccessPanel kind="client" id={client.id} name={client.name}
+                             brand={{ name: settings?.officeName, image: settings?.landingImage }}
                              onError={(m) => window.alert(m)} />
 
           <ClientGallery client={client} onChange={onChange} />

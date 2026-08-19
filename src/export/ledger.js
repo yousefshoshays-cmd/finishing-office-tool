@@ -1,5 +1,12 @@
 let _ExcelJS = null;
-const ExcelJSLib = async () => (_ExcelJS ||= await import("exceljs"));
+const ExcelJSLib = async () => {
+  const m = (_ExcelJS ||= await import("exceljs"));
+  /* ExcelJS مكتبة CommonJS: في المتصفح تصل داخل default بعد التجميع،
+     وفي node تصل مباشرة. الاعتماد على شكل واحد كان يجعل كل تصديرات
+     الإكسل تفشل في المتصفح وحده — بينما تنجح في الاختبارات، فيبقى
+     العطل خفيًا. هنا نقبل الشكلين. */
+  return m?.Workbook ? m : (m?.default?.Workbook ? m.default : m);
+};
 import { saveAs } from "file-saver";
 import { contractValue, phasePaymentPlan, variationTotal } from "../domain/finance.js";
 import { calcByPhase } from "../domain/pricing.js";

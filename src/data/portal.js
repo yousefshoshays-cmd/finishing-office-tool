@@ -132,10 +132,37 @@ export async function portalLogin(username, password) {
 
 /*  رابط البوابة الذي يُسلَّم لصاحب الحساب.
     نفس الموقع بمعامل واحد — لا نطاق جديد ولا استضافة إضافية. */
-export function portalUrl() {
+export function portalUrl(kind = "client", brand = {}) {
   if (typeof window === "undefined") return "";
   const { origin, pathname } = window.location;
-  return `${origin}${pathname.replace(/index\.html$/, "")}?portal=1`;
+  const base = `${origin}${pathname.replace(/index\.html$/, "")}`;
+  const q = new URLSearchParams();
+  q.set("portal", kind === "contractor" ? "contractor" : "client");
+  /* هوية المكتب تُحمل في الرابط نفسه: صفحة الدخول تُفتح قبل أي تحقّق،
+     فلا سبيل لقراءة إعدادات المكتب من قاعدة البيانات في تلك اللحظة. */
+  if (brand.name) q.set("o", brand.name);
+  if (brand.image) q.set("bg", brand.image);
+  return `${base}?${q.toString()}`;
+}
+
+/* هوية المكتب على صفحة الدخول: من الرابط أولًا، ثم من آخر زيارة محفوظة
+   في متصفح صاحب الحساب — فتظهر الهوية ولو نُسخ الرابط مجرّدًا لاحقًا. */
+const BRAND_KEY = "boq_portal_brand";
+export function portalBrand() {
+  let fromUrl = { name: "", image: "" };
+  try {
+    const q = new URLSearchParams(window.location.search);
+    fromUrl = { name: q.get("o") || "", image: q.get("bg") || "" };
+  } catch {}
+  if (fromUrl.name || fromUrl.image) {
+    try { localStorage.setItem(BRAND_KEY, JSON.stringify(fromUrl)); } catch {}
+    return fromUrl;
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(BRAND_KEY) || "null");
+    if (saved && (saved.name || saved.image)) return saved;
+  } catch {}
+  return { name: "", image: "" };
 }
 
 /*  هل فُتحت الصفحة كبوابة لا كأداة مكتب؟ */

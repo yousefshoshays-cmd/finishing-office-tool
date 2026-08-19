@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { INK, PAPER, MUTED, LINE, STONE, SAGE, COPPER, DANGER, PHASE_COLORS, STAGE_COLORS } from "./tokens.js";
 import { Eyebrow, Rule, Meta, MetaGrid, SectionHead, LangToggle } from "./editorial.jsx";
 import { t, useLang, applyDocumentLang, currency } from "./i18n.js";
-import { portalLogin } from "../data/portal.js";
+import { portalLogin, portalBrand } from "../data/portal.js";
 import { fmt, DEFAULT_SETTINGS } from "../domain/catalogue.js";
 import { calcByPhase, migrateClient } from "../domain/pricing.js";
 import { phasePaymentPlan } from "../domain/finance.js";
@@ -20,12 +20,21 @@ import { phasePaymentPlan } from "../domain/finance.js";
 
 const card = { borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 22 };
 
-/* ───────────────────────── شاشة الدخول ───────────────────────── */
+/* ───────────────────────── شاشة الدخول ─────────────────────────
+   أول ما يراه العميل، فهي التي تصنع الانطباع لا الصفحة التي بعدها.
+   نموذج أبيض في وسط فراغ يقول «برنامج»، والمكاتب تقول شيئًا آخر:
+   نصف الشاشة صورة تحمل الهوية، ونصفها نموذج هادئ.
+
+   الهوية تصل من الرابط الذي سلّمه المكتب (اسم المكتب وصورته)، وتُحفظ
+   في متصفح صاحب الحساب فتظهر في الزيارات التالية ولو كتب الرابط مجرّدًا.
+   وحين لا توجد صورة، البديل ليس فراغًا أبيض بل لوح حبري بورق مخطط —
+   صمت مقصود لا نقص. */
 function LoginScreen({ onDone, kindHint = "client" }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const brand = portalBrand();
   useLang();
 
   const submit = async (e) => {
@@ -36,46 +45,74 @@ function LoginScreen({ onDone, kindHint = "client" }) {
     setBusy(false);
   };
 
+  const isContractor = kindHint === "contractor";
+
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <form onSubmit={submit} style={{ width: "100%", maxWidth: 380 }}>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 26 }}><LangToggle /></div>
-
-        <Eyebrow>{kindHint === "contractor" ? t("بوابة المقاول") : t("بوابة العميل")}</Eyebrow>
-        <h1 className="h-page" style={{ margin: "6px 0 8px" }}>
-          {kindHint === "contractor" ? t("حسابك الجاري") : t("متابعة مشروعك")}
-        </h1>
-        <div style={{ fontSize: 13, color: MUTED, marginBottom: 26 }}>
-          {t("ادخل باسم المستخدم وكلمة السر اللذين سلّمهما لك المكتب")}
+    <div className="loginsplit">
+      {/* ══ نصف الهوية ══ */}
+      <aside className="loginart">
+        {brand.image
+          ? <img src={brand.image} alt="" className="kenburns" />
+          : <div className="blueprint" />}
+        <div className="loginartveil" />
+        <div className="loginartbody">
+          <Eyebrow style={{ color: "#DCD6CC" }}>
+            {isContractor ? t("بوابة المقاول") : t("بوابة العميل")}
+          </Eyebrow>
+          <div className="loginartname">
+            {brand.name || t("نظام متابعة العملاء والتسعير")}
+          </div>
+          <div className="loginartline">
+            {isContractor
+              ? t("حسابك الجاري في كل مشروع: المعتمد والمحتجز والمتبقي")
+              : t("متابعة مشروعك: المراحل والدفعات وصور التنفيذ")}
+          </div>
         </div>
-        <Rule firm />
+      </aside>
 
-        <div style={{ marginTop: 22 }}>
-          <Eyebrow>{t("اسم المستخدم")}</Eyebrow>
-          <input className="inp" value={u} onChange={e => setU(e.target.value.toUpperCase())}
-                 autoCapitalize="characters" autoCorrect="off" spellCheck="false"
-                 style={{ letterSpacing: "0.12em", fontWeight: 600 }} />
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <Eyebrow>{t("كلمة السر")}</Eyebrow>
-          <input className="inp" type="password" value={p} onChange={e => setP(e.target.value)}
-                 autoComplete="current-password" />
-        </div>
+      {/* ══ نصف النموذج ══ */}
+      <main className="loginform">
+        <form onSubmit={submit} style={{ width: "100%", maxWidth: 380 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 30 }}>
+            <LangToggle />
+          </div>
 
-        {err && <div style={{ marginTop: 14, fontSize: 12, color: DANGER }}>{err}</div>}
+          <h1 className="h-page" style={{ margin: "0 0 8px" }}>
+            {isContractor ? t("حسابك الجاري") : t("متابعة مشروعك")}
+          </h1>
+          <div style={{ fontSize: 13, color: MUTED, marginBottom: 26 }}>
+            {t("ادخل باسم المستخدم وكلمة السر اللذين سلّمهما لك المكتب")}
+          </div>
+          <Rule firm />
 
-        <button type="submit" className="btn btn-primary" disabled={busy || !u || !p}
-                style={{ width: "100%", marginTop: 24 }}>
-          {busy ? t("جاري الدخول…") : t("دخول")}
-        </button>
+          <div style={{ marginTop: 22 }}>
+            <Eyebrow>{t("اسم المستخدم")}</Eyebrow>
+            <input className="inp" value={u} onChange={e => setU(e.target.value.toUpperCase())}
+                   autoCapitalize="characters" autoCorrect="off" spellCheck="false"
+                   style={{ letterSpacing: "0.12em", fontWeight: 600 }} />
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Eyebrow>{t("كلمة السر")}</Eyebrow>
+            <input className="inp" type="password" value={p} onChange={e => setP(e.target.value)}
+                   autoComplete="current-password" />
+          </div>
 
-        <div style={{ marginTop: 20, fontSize: 11.5, color: MUTED, lineHeight: 1.9 }}>
-          {t("نسيت كلمة السر؟ اطلب من المكتب إصدار كلمة سر جديدة — لا يمكن استرجاع القديمة لأنها غير مخزَّنة أصلًا.")}
-        </div>
-      </form>
+          {err && <div style={{ marginTop: 14, fontSize: 12, color: DANGER, lineHeight: 1.8 }}>{err}</div>}
+
+          <button type="submit" className="btn btn-primary" disabled={busy || !u || !p}
+                  style={{ width: "100%", marginTop: 24 }}>
+            {busy ? t("جاري الدخول…") : t("دخول")}
+          </button>
+
+          <div style={{ marginTop: 20, fontSize: 11.5, color: MUTED, lineHeight: 1.9 }}>
+            {t("نسيت كلمة السر؟ اطلب من المكتب إصدار كلمة سر جديدة — لا يمكن استرجاع القديمة لأنها غير مخزَّنة أصلًا.")}
+          </div>
+        </form>
+      </main>
     </div>
   );
 }
+
 
 /* ───────────────────────── صندوق الصورة المكبّرة ───────────────────────── */
 function Lightbox({ url, onClose }) {
