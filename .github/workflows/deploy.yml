@@ -1,92 +1,52 @@
 # ════════════════════════════════════════════════════════════════════
-#  بناء ونشر تلقائي
+#  فحص الجودة بعد كل رفع — لا ينشر شيئًا
 #  --------------------------------------------------------------------
-#  المشكلة التي يحلّها: رفع مجلد assets يدويًا من المتصفح كان يُسقط
-#  ملفات بصمت (حدث مرتين)، فيبقى الموقع على نسخة قديمة بلا أي رسالة خطأ.
+#  لماذا تغيّر هذا الملف؟ لأن النشر عبر Actions أضاف طبقة تفشل لأسباب
+#  لا علاقة لها بالأداة (تثبيت اعتماديات، صلاحيات Pages، ذاكرة مؤقتة)،
+#  وكل فشل فيها كان يعني: الموقع لا يتحدّث والسبب غامض.
 #
-#  بعد اليوم: ارفع ملفات src فقط. هذا العامل يبني assets وstyles.css
-#  بنفسه وينشرها. لا رفع يدوي للملفات المبنية، ولا ملفات ساقطة.
+#  الترتيب الجديد أبسط وأمتن:
+#    • النشر يتم من الفرع مباشرة (Settings ← Pages ← Deploy from a branch)
+#      لأن المستودع يحتوي أصلًا على الملفات المبنية جاهزة.
+#    • وهذا العامل يبقى للفحص وحده: يشغّل الاختبارات ويتأكد أن الملفات
+#      المبنية مطابقة للمصدر. فشله لا يعطّل الموقع — يخبرك فقط.
 # ════════════════════════════════════════════════════════════════════
-name: بناء ونشر الموقع
+name: فحص الاختبارات
 
 on:
   push:
     branches: [main]
     paths-ignore: ["**.md", "migrations/**"]
-  workflow_dispatch:      # زر تشغيل يدوي من صفحة Actions
+  workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # بلا cache: npm — أكثر أسباب فشل الفحص شيوعًا وأقلّها فائدة هنا
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
 
       - name: تثبيت الاعتماديات
-        run: npm ci || npm install
+        run: npm install --no-audit --no-fund
 
       - name: تشغيل كل الاختبارات
-        # النشر لا يحدث إن فشل اختبار واحد — خط الدفاع الأخير
         run: npm run test:all
 
-      - name: بناء الموقع
-        run: npm run build
-
-      - name: التحقق من اكتمال الملفات المبنية
-        # يمنع نشر نسخة ينقصها ملف — نفس العطل الذي حدث يدويًا
+      - name: التأكد أن الملفات المبنية مطابقة للمصدر
+        # لو نسيت رفع assets بعد تعديل src، يظهر هنا بدل أن يظهر
+        # كـ«رفعت ولم يتغيّر شيء» بعد يومين
         run: |
-          test -f assets/main.js || { echo "::error::assets/main.js مفقود"; exit 1; }
-          test -f styles.css     || { echo "::error::styles.css مفقود"; exit 1; }
-          node -e "
-            const fs=require('fs'),path=require('path');
-            const seen=new Set(); const stack=['main.js'];
-            while(stack.length){
-              const f=stack.pop(); if(seen.has(f)) continue; seen.add(f);
-              const p=path.join('assets',f); if(!fs.existsSync(p)) continue;
-              for(const m of fs.readFileSync(p,'utf8').matchAll(/[\"']\.\/([A-Za-z0-9._-]+\.js)[\"']/g)){
-                if(!seen.has(m[1])) stack.push(m[1]);
-              }
-            }
-            const real=[...seen].filter(f=>fs.existsSync(path.join('assets',f)));
-            console.log('الملفات المطلوبة والموجودة: '+real.length);
-            if(real.length<5){ console.error('::error::شجرة الملفات المبنية ناقصة'); process.exit(1); }
-          "
-
-      - name: تجهيز مجلد النشر
-        # نرفع ما يحتاجه الموقع فقط — لا node_modules ولا اختبارات ولا هجرات.
-        # رفع المجلد كاملًا كان سيدفع مئات الميجابايت بلا داعٍ ويبطئ كل نشرة.
-        run: |
-          mkdir -p _site
-          cp index.html styles.css _site/
-          cp -r assets _site/
-          cp -r fonts  _site/
-          test -f _site/assets/main.js
-          test -f _site/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2
-          du -sh _site
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          cp assets/main.js /tmp/main_before.js
+          npm run build
+          if ! cmp -s /tmp/main_before.js assets/main.js; then
+            echo "::warning::الملفات المبنية في المستودع أقدم من المصدر — أعد رفع مجلد assets"
+          else
+            echo "الملفات المبنية مطابقة للمصدر ✅"
+          fi
