@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { t, useLang } from "./i18n.js";
 import { Loader2, Check, AlertCircle, Copy } from "lucide-react";
 import {
   availablePlans, submitPayment, myPaymentRequests,
@@ -105,7 +106,7 @@ export default function BillingPanel({ license, onToast, onError }) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h2 className="text-xl font-bold" style={{ color: NAVY }}>الاشتراك</h2>
+      <h2 className="text-xl font-bold" style={{ color: NAVY }}>{t("الاشتراك")}</h2>
       <p className="mt-1 text-xs" style={{ color: MUTED }}>
         {license?.status === "trial"
           ? `تجربتك المجانية باقٍ منها ${license.daysLeft} يومًا. اشترك قبل انتهائها لتستمر بلا انقطاع.`
@@ -155,18 +156,18 @@ export default function BillingPanel({ license, onToast, onError }) {
               <div className="text-sm font-bold" style={{ color: NAVY }}>{p.name}</div>
               <div className="mt-1 text-2xl font-bold" style={{ color: TEXT }}>
                 {p.price.toLocaleString("ar-EG")}
-                <span className="text-xs font-semibold" style={{ color: MUTED }}> ج.م</span>
+                <span className="text-xs font-semibold" style={{ color: MUTED }}> {t("ج.م")}</span>
               </div>
               <div className="mt-0.5 text-[11px]" style={{ color: MUTED }}>
                 {p.months > 1 ? `${p.perMonth.toLocaleString("ar-EG")} ج.م شهريًا` : "شهريًا"}
               </div>
               {save > 0 && (
                 <div className="mt-1 text-[11px] font-bold" style={{ color: "#047857" }}>
-                  توفير {save}٪
+                  توفير {save}{t("٪")}
                 </div>
               )}
               <div className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: MUTED }}>
-                <Check size={12} /> حتى {p.seats} مهندسين
+                <Check size={12} /> {t("حتى")} {p.seats} {t("مهندسين")}
               </div>
             </button>
           );
@@ -178,7 +179,7 @@ export default function BillingPanel({ license, onToast, onError }) {
           {/* ── تعليمات التحويل ── */}
           <div className="mt-6 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
             <div className="mb-1 text-sm font-bold" style={{ color: NAVY }}>
-              ١. حوّل {selected.price.toLocaleString("ar-EG")} ج.م
+              ١. حوّل {selected.price.toLocaleString("ar-EG")} {t("ج.م")}
             </div>
             <p className="mb-3 text-xs" style={{ color: MUTED }}>
               اختر الوسيلة الأنسب لك، ثم احتفظ برقم العملية.
@@ -195,12 +196,12 @@ export default function BillingPanel({ license, onToast, onError }) {
             </div>
 
             <div className="space-y-2">
-              {method === "instapay" && <CopyField label="عنوان إنستاباي" value={PAYOUT.instapayHandle} />}
-              {method === "wallet"   && <CopyField label="رقم المحفظة" value={PAYOUT.walletNumber} />}
+              {method === "instapay" && <CopyField label={t("عنوان إنستاباي")} value={PAYOUT.instapayHandle} />}
+              {method === "wallet"   && <CopyField label={t("رقم المحفظة")} value={PAYOUT.walletNumber} />}
               {method === "bank" && (
                 <>
-                  <CopyField label="البنك" value={PAYOUT.bankName} />
-                  <CopyField label="رقم الحساب" value={PAYOUT.bankAccount} />
+                  <CopyField label={t("البنك")} value={PAYOUT.bankName} />
+                  <CopyField label={t("رقم الحساب")} value={PAYOUT.bankAccount} />
                   <CopyField label="IBAN" value={PAYOUT.bankIban} />
                 </>
               )}
@@ -212,14 +213,14 @@ export default function BillingPanel({ license, onToast, onError }) {
 
           {/* ── تسجيل الطلب ── */}
           <div className="mt-3 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-            <div className="mb-1 text-sm font-bold" style={{ color: NAVY }}>٢. سجّل عمليتك</div>
+            <div className="mb-1 text-sm font-bold" style={{ color: NAVY }}>{t("٢. سجّل عمليتك")}</div>
             <p className="mb-3 text-xs" style={{ color: MUTED }}>
               اكتب رقم العملية من إيصال التحويل. هذا ما يتيح لنا مطابقة الدفعة وتفعيل اشتراكك.
             </p>
             <input
               className="mb-3 w-full rounded-lg px-3 py-2.5 text-sm"
               style={{ border: `1px solid ${BORDER}` }}
-              placeholder="رقم العملية / المرجع"
+              placeholder={t("رقم العملية / المرجع")}
               value={reference}
               onChange={e => setReference(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && reference.trim()) send(); }}
@@ -241,13 +242,13 @@ export default function BillingPanel({ license, onToast, onError }) {
       {/* ── سجل الطلبات ── */}
       {history.length > 0 && (
         <div className="mt-6">
-          <div className="mb-2 text-xs font-bold" style={{ color: MUTED }}>سجل الطلبات</div>
+          <div className="mb-2 text-xs font-bold" style={{ color: MUTED }}>{t("سجل الطلبات")}</div>
           <div className="space-y-2">
             {history.map(h => (
               <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs"
                    style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
                 <span style={{ color: TEXT }}>
-                  {Number(h.amount_egp).toLocaleString("ar-EG")} ج.م · {h.reference || "بلا مرجع"}
+                  {Number(h.amount_egp).toLocaleString("ar-EG")} {t("ج.م ·")} {h.reference || "بلا مرجع"}
                 </span>
                 <span className="font-bold" style={{
                   color: h.status === "approved" ? "#047857" : h.status === "rejected" ? "#A8322B" : "#7A5E22",

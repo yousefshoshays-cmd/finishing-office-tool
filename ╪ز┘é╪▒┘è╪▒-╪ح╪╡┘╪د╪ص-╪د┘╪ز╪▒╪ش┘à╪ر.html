@@ -1,0 +1,161 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>إصلاح الترجمة الإنجليزية</title>
+<style>
+  :root{--ink:#14110F;--line:#E2E0DC;--firm:#C9C6C0;--muted:#83807A;--copper:#8C5A2B;--danger:#9E2B22;--sage:#3F5B49;--paper:#FAFAF9}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);line-height:1.95;
+       font-family:-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:34px 20px 90px}
+  .eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block}
+  h1{font-size:38px;font-weight:300;letter-spacing:-.02em;line-height:1.28;margin:8px 0 12px}
+  .lead{color:var(--muted);font-size:14.5px;margin:0 0 26px;max-width:640px}
+  hr{border:none;border-top:1px solid var(--ink);margin:0 0 38px}
+  section{margin-bottom:50px}
+  h2{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+     border-top:1px solid var(--ink);padding-top:12px;margin:0 0 18px}
+  h3{font-size:16.5px;font-weight:500;margin:26px 0 6px}
+  p,li{font-size:14.3px} ul,ol{padding-right:20px;margin:8px 0} li{margin-bottom:8px}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.4px;color:var(--copper);
+       direction:ltr;display:inline-block;background:#F6F5F3;padding:1px 6px}
+  table{width:100%;border-collapse:collapse;font-size:13.4px;margin:14px 0}
+  th{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+     text-align:start;border-bottom:1px solid var(--ink);padding:8px 10px;font-weight:500}
+  td{border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top}
+  td.n{font-variant-numeric:tabular-nums;direction:ltr;text-align:start;white-space:nowrap}
+  td.en{direction:ltr;text-align:start}
+  .note{border-inline-start:2px solid var(--ink);padding:11px 15px;margin:16px 0;font-size:13.6px;background:var(--paper)}
+  .note.warn{border-inline-start-color:var(--danger)}
+  .note.good{border-inline-start-color:var(--sage)}
+  .grade{display:flex;border:1px solid var(--ink);margin:22px 0;flex-wrap:wrap}
+  .grade div{flex:1 1 140px;padding:14px 16px;border-inline-end:1px solid var(--line)}
+  .grade div:last-child{border-inline-end:none}
+  .grade .k{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
+  .grade .v{font-size:23px;font-weight:300}
+  .bug{border:1px solid var(--line);padding:0 18px 6px;margin:20px 0}
+  .bug .hd{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--line);
+           margin:0 -18px 12px;padding:12px 18px}
+  .sev{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--ink);padding:2px 9px;white-space:nowrap}
+  .sev.hi{border-color:var(--danger);color:var(--danger)}
+  .sev.md{border-color:var(--copper);color:var(--copper)}
+  .bug .hd h4{margin:0;font-size:15.5px;font-weight:600}
+  .fixed{font-size:12.5px;color:var(--sage);border-top:1px solid var(--line);margin:12px -18px 0;padding:10px 18px}
+  .foot{border-top:1px solid var(--ink);padding-top:16px;font-size:12.6px;color:var(--muted)}
+</style></head><body><div class="wrap">
+
+<span class="eyebrow">English translation</span>
+<h1>الترجمة الإنجليزية — الخلل وإصلاحه</h1>
+<p class="lead">كان زرّ EN يقلب اتجاه الصفحة ولا يترجم إلا سُبعها. الآن يترجم الأداة كاملة —
+كل شاشة، وكل بند مقايسة، وكل رسالة.</p>
+<hr>
+
+<div class="grade">
+  <div><span class="k">قبل</span><span class="v">١٤١</span><span class="k" style="margin-top:4px">نصًّا مترجَمًا</span></div>
+  <div><span class="k">بعد</span><span class="v">٦٨٨</span><span class="k" style="margin-top:4px">نصًّا مترجَمًا</span></div>
+  <div><span class="k">عربي متبقٍّ</span><span class="v">٠</span></div>
+  <div><span class="k">اختبارات</span><span class="v">٦٣٤</span></div>
+  <div><span class="k">فشل</span><span class="v">٠</span></div>
+</div>
+
+<section>
+<h2>ما كان الخلل بالضبط</h2>
+<p>الأداة مكتوبة بالعربية أصلًا، وطبقة اللغة تعمل بمبدأ سليم: <strong>النص العربي نفسه هو مفتاح الترجمة</strong>.
+لكن النصّ لا يُترجَم إلا إذا مرّ بدالة الترجمة — ومعظم نصوص الشاشات لم يكن يمرّ بها.</p>
+<p>فكانت النتيجة أن زرّ EN يقلب الاتجاه من اليمين إلى اليسار، ويترجم الترويسة وبعض الأزرار،
+ثم تبقى الشاشة عربية. وهذا أسوأ من ألّا يوجد زرّ أصلًا: يَعِد بشيء ولا يفي به.</p>
+
+<div class="note">
+  <strong>القياس قبل الإصلاح:</strong> فتحتُ الأداة بالإنجليزية ومررتُ على كل شاشة أعُدّ ما بقي عربيًا —
+  <strong>٢٣٤ نصًّا ظاهرًا</strong>. من ١٤١ مفتاحًا في القاموس، بينما الشاشات تحتاج قرابة ٦٩٠.
+</div>
+</section>
+
+<section>
+<h2>ما فعلته</h2>
+
+<h3>١ · مرّرتُ كل نصّ ظاهر بدالة الترجمة</h3>
+<p>لا يدويًا سطرًا سطرًا — بل بأربع مرّات آليّة، كلٌّ منها تعالج شكلًا مختلفًا من النصّ:
+نصّ بين وسمين، ونصّ ممتدّ على أسطر، ونصّ ملاصق لأيقونة، ونصّ بعد رقم محسوب.
+وبعد كل مرّة: بناء، ثم ٥٣٣ اختبارًا، ثم رحلة كاملة في متصفّح حقيقي.</p>
+
+<h3>٢ · ترجمتُ ٥٤٧ نصًّا جديدًا</h3>
+<table>
+  <tr><th>المجموعة</th><th>العدد</th><th>مثال</th></tr>
+  <tr><td>شاشات المكتب ورسائلها</td><td class="n">٢٤٦</td><td class="en">Record a collection · Awaiting approval</td></tr>
+  <tr><td>بنود المقايسة الـ٤١</td><td class="n">٤١</td><td class="en">Porcelain / ceramic flooring to living areas</td></tr>
+  <tr><td>النطاقات والمراحل والمستويات والحالات</td><td class="n">٢٥</td><td class="en">First fix · Signature · Contracted</td></tr>
+  <tr><td>صنائع المقاولين</td><td class="n">١٧</td><td class="en">Plastering &amp; rendering · Metalwork</td></tr>
+  <tr><td>شظايا الجمل المركّبة</td><td class="n">٧٧</td><td class="en">+ supervision, contingency and VAT</td></tr>
+  <tr><td>الفقرات الطويلة والتحذيرات</td><td class="n">١٤١</td><td class="en">The bucket exists but its access policies are missing…</td></tr>
+</table>
+
+<h3>٣ · جعلتُ الترجمة تسري من مكان واحد حيث أمكن</h3>
+<p>اسم الدور يظهر في عشرات المواضع — فترجمتُه في دالته وحدها بدل عشرات المواضع.
+وكذلك السطر التعريفي للمكتب، ورسائل مساحة الصور، وحالات المراحل.
+الترجمة في المصدر تكفي عن ملاحقة كل موضع، ولن تُنسى في موضع جديد يُضاف غدًا.</p>
+</section>
+
+<section>
+<h2>عطلان انكشفا أثناء العمل</h2>
+
+<div class="bug">
+  <div class="hd"><span class="sev hi">خطِر</span><h4>تصادم اسم أسقط شاشة تحليل التكلفة</h4></div>
+  <p>في أحد المكوّنات كان هناك متغيّر محليّ اسمه <code>t</code> — نفس اسم دالة الترجمة.
+  فلمّا صارت الشاشة تنادي الترجمة، وجدت المتغيّر المحليّ مكانها وانهارت الشاشة كاملةً:
+  <code>t is not a function</code>.</p>
+  <p>كشفَته الاختبارات الآلية فورًا (ثلاثة منها احمرّت)، لا المستخدم.</p>
+  <div class="fixed">أُصلح — أُعيدت تسمية المتغيّر المحليّ، وكتبتُ فحصًا يمشي على الملفات كلها
+  باحثًا عن أي نداء ترجمة داخل نطاق يحجب فيه متغيّرٌ محليٌّ اسمَ الدالة. النتيجة: صفر.</div>
+</div>
+
+<div class="bug">
+  <div class="hd"><span class="sev md">متوسط</span><h4>الأداة الآلية دخلت داخل تعليق وداخل نصوص مركّبة</h4></div>
+  <p>مرّتان أخطأت الأداة: مرّة لفّت شرحًا مكتوبًا للمبرمج لا للمستخدم، ومرّة وضعت
+  نداء الترجمة داخل نصّ مركّب فأفسدت تركيبه.</p>
+  <div class="fixed">أُصلح — أضفتُ للأداة تتبّعًا للتعليقات الممتدّة، وأصلحتُ النصوص الأربعة المركّبة
+  بيدي وأعدت صياغتها بحيث تُترجَم الجملة وتُركَّب الأرقام حولها. ثم فحصتُ الملفات كلها بحثًا عن
+  أي بقيّة — فلم يبقَ شيء.</div>
+</div>
+</section>
+
+<section>
+<h2>كيف تحقّقت</h2>
+<p>لم أكتفِ بعدّ المفاتيح — شغّلتُ الأداة بالإنجليزية في متصفّح حقيقي ومررتُ على كل شاشة،
+وقرأتُ كل نصّ ظاهر عليها آليًّا، وعددتُ ما بقي عربيًا.</p>
+<table>
+  <tr><th>الفحص</th><th>النتيجة</th></tr>
+  <tr><td>نصّ عربي ظاهر في شاشات المكتب بالإنجليزية</td><td class="n">٠</td></tr>
+  <tr><td>نصّ عربي في بوابتَي العميل والمقاول</td><td class="n">٠ — عدا بيانات العميل نفسها</td></tr>
+  <tr><td>رحلة كاملة بالإنجليزية: مكتب ← مشروع ← تسعير ← تعاقد ← مالية</td><td class="n">٣١ فحصًا ناجحًا</td></tr>
+  <tr><td>رحلة كاملة بالعربية (تأكّدًا من عدم كسر شيء)</td><td class="n">٤٨ فحصًا ناجحًا</td></tr>
+  <tr><td>البوابتان ببيانات حقيقية</td><td class="n">٢٢ فحصًا ناجحًا</td></tr>
+  <tr><td>الاختبارات الآلية</td><td class="n">٥٣٣ ناجحًا · ٠ فاشل</td></tr>
+</table>
+
+<div class="note good">
+  <strong>والأرقام لا تتغيّر بتغيّر اللغة.</strong> تحقّقتُ صراحةً: الإجمالي نفسه قبل التبديل وبعده
+  وبعد العودة — <code>2,015,987</code> في الحالتين. الترجمة تمسّ ما يُقرأ لا ما يُحسب.
+</div>
+
+<h3>ما يبقى عربيًا عمدًا</h3>
+<ul>
+  <li><strong>بياناتك أنت:</strong> اسم العميل، وعنوان المشروع، وملاحظاتك. هذه كتبتَها بيدك ولا يجوز لأحد تغييرها.</li>
+  <li><strong>حرف «ع» في زرّ اللغة:</strong> هو الخيار العربي نفسه — لو تُرجم لما دلّ على شيء.</li>
+</ul>
+</section>
+
+<section>
+<h2>ما عليك فعله</h2>
+<ol>
+  <li>ارفع ملفات التحديث كما في «طريقة الرفع» المرفقة.</li>
+  <li>لا ملف قاعدة بيانات جديد — التغيير كله في الأداة.</li>
+  <li>افتح الأداة، اضغط <strong>EN</strong>، وتنقّل بين الشاشات. النسخة يجب أن تكون <code>2026.08.21d</code>.</li>
+</ol>
+<div class="note">
+  <strong>الاختيار محفوظ في متصفّحك:</strong> إن فتحتَها بالإنجليزية بقيت إنجليزية في الزيارة القادمة،
+  وكذلك عند عميلك في بوابته — لكلٍّ اختياره على جهازه.
+</div>
+</section>
+
+<p class="foot">النسخة <code>2026.08.21d</code> — ٦٨٨ مفتاح ترجمة · ١٠١ فحص رحلة · ٥٣٣ اختبارًا آليًا · صفر فشل.</p>
+</div></body></html>

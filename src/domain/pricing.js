@@ -52,8 +52,29 @@ export function newClient() {
 
 const NAME_TO_ID = Object.fromEntries(ITEMS.map(it => [it[1], it[5]]));
 
+/*  الافتراضات التي لا يعمل الحساب بدونها.
+
+    درس من عطل حقيقي: سجلّ مشروع بلا scopeLevel/scopeIncluded كان
+    يُسقط بوابة العميل كاملةً برسالة «Cannot read ... تصميم».
+    ومن أين يأتي سجلّ ناقص؟ من نسخة احتياطية قديمة، أو استيراد،
+    أو سجلّ كُتب بإصدار سابق. الحساب يفترض وجودهما، فإن غابا انهار.
+
+    الحلّ هنا لا هناك: من يقرأ السجلّ يضمن اكتماله مرة واحدة،
+    بدل أن يتحصّن كل حاسب على حدة — ولن يتحصّن كلّهم.  */
+function withScopeDefaults(c) {
+  if (!c) return c;
+  const needLevel    = !c.scopeLevel    || typeof c.scopeLevel    !== "object";
+  const needIncluded = !c.scopeIncluded || typeof c.scopeIncluded !== "object";
+  if (!needLevel && !needIncluded) return c;
+  return {
+    ...c,
+    scopeLevel:    needLevel    ? Object.fromEntries(SCOPES.map(s => [s, "متوسط"])) : c.scopeLevel,
+    scopeIncluded: needIncluded ? Object.fromEntries(SCOPES.map(s => [s, s !== "الفرش والأثاث"])) : c.scopeIncluded,
+  };
+}
+
 export function migrateClient(client) {
-  if (!client || client.items) return client;   // مهاجَر بالفعل
+  if (!client || client.items) return withScopeDefaults(client);   // مهاجَر بالفعل
   const items = {};
   const put = (name, key, value) => {
     const id = NAME_TO_ID[name];
@@ -65,7 +86,7 @@ export function migrateClient(client) {
   for (const [n, v] of Object.entries(client.itemQty       || {})) put(n, "qty", v);
   for (const [n, v] of Object.entries(client.itemPrice     || {})) put(n, "price", v);
   for (const [n, v] of Object.entries(client.itemPriceDate || {})) put(n, "priceDate", v);
-  return { ...client, items };
+  return withScopeDefaults({ ...client, items });
 }
 
 const has = (o, k) => o && Object.prototype.hasOwnProperty.call(o, k)

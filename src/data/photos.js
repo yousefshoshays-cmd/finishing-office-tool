@@ -1,3 +1,4 @@
+import { t } from "../ui/i18n.js";
 import { getSupabase, isCloudMode, withTimeout, getOrgId } from "./storage.js";
 
 /* ════════════════════════════════════════════════════════════════
@@ -157,28 +158,28 @@ export function humanSize(bytes) {
    خطأ تظهر بعد اختيار الصورة. */
 export async function bucketStatus() {
   if (!isCloudMode()) {
-    return { ok: false, code: "local", message: "الوضع محلي — رفع الصور يحتاج المزامنة السحابية" };
+    return { ok: false, code: "local", message: t("الوضع محلي — رفع الصور يحتاج المزامنة السحابية") };
   }
   const sb = getSupabase();
-  if (!sb) return { ok: false, code: "noclient", message: "تعذّر الاتصال بالخادم" };
+  if (!sb) return { ok: false, code: "noclient", message: t("تعذّر الاتصال بالخادم") };
 
   try {
     const { error } = await withTimeout(
       sb.storage.from(PHOTO_BUCKET).list("", { limit: 1 }), 12000);
-    if (!error) return { ok: true, code: "ok", message: "مساحة الصور جاهزة" };
+    if (!error) return { ok: true, code: "ok", message: t("مساحة الصور جاهزة") };
 
     const msg = String(error.message || "").toLowerCase();
     if (msg.includes("not found") || msg.includes("bucket")) {
       return { ok: false, code: "nobucket",
-               message: `مساحة "${PHOTO_BUCKET}" غير موجودة — شغّل ملف الهجرة 011 أو أنشئها من Supabase ← Storage` };
+               message: `${t("مساحة")} "${PHOTO_BUCKET}" ${t("غير موجودة — شغّل ملف الهجرة 011 أو أنشئها من Supabase ← Storage")}` };
     }
     if (msg.includes("row-level security") || msg.includes("unauthorized") || msg.includes("403")) {
       return { ok: false, code: "policy",
-               message: "المساحة موجودة لكن سياسات الوصول ناقصة — شغّل ملف الهجرة 011" };
+               message: t("المساحة موجودة لكن سياسات الوصول ناقصة — شغّل ملف الهجرة 011") };
     }
     return { ok: false, code: "unknown", message: error.message };
   } catch (e) {
-    return { ok: false, code: "unknown", message: e.message || "تعذّر الفحص" };
+    return { ok: false, code: "unknown", message: e.message || t("تعذّر الفحص") };
   }
 }
 

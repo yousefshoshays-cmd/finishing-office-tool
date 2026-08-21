@@ -42,6 +42,7 @@ import { TEMPLATES, clientFromTemplate } from "./domain/templates.js";
 import { photosAvailable, uploadPhoto, listPhotos, deletePhoto, signedUrls, humanSize, PHOTO_BUCKET, bucketStatus,
          uploadGalleryPhoto, deleteGalleryPhoto, galleryPublicUrl } from "./data/photos.js";
 import { ROLES, ASSIGNABLE_ROLES, PERMISSIONS, can, roleLabel } from "./domain/permissions.js";
+import { passwordCheck, showShort, showMismatch } from "./domain/password.js";
 import {
   ProjectCover, StagePill, SectionHead, Frame, Meta, MetaGrid,
   Eyebrow, Rule, LangToggle, CoverUpload,
@@ -62,7 +63,7 @@ import {
   NAVY, NAVY_DARK, GOLD, LIGHT, BORDER, TEXT, MUTED,
   LEVELS, LEVEL_COLORS, SCOPES, STAGES, STAGE_COLORS,
   PHASES, PHASE_COLORS, PHASE_SHORT,
-  SECTIONS, CLAY, CLAY_DARK, SAGE, COPPER, DANGER, INK, PAPER, STONE,
+  SECTIONS, CLAY, CLAY_DARK, SAGE, COPPER, DANGER, INK, PAPER, STONE, LINE,
 } from "./ui/tokens.js";
 
 /* الشاشة الافتتاحية لكل قسم — الضغط على القسم يفتحها مباشرة */
@@ -156,7 +157,7 @@ function ConfirmDialog({ open, title, body, confirmLabel = "تأكيد", danger,
             {confirmLabel}
           </button>
           <button onClick={onCancel} className="flex-1 rounded-lg py-2.5 text-sm font-bold" style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
-            إلغاء
+            {t("إلغاء")}
           </button>
         </div>
       </div>
@@ -207,10 +208,9 @@ function TeamInvite({ license }) {
   };
   return (
     <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-      <div className="mb-2 h-section">دعوة فريق المكتب</div>
+      <div className="mb-2 h-section">{t("دعوة فريق المكتب")}</div>
       <p className="mb-3 text-xs leading-5 text-muted">
-        شارك هذا الكود مع مهندسي مكتبك. يكتبونه عند إنشاء حساب فينضمّون لمكتبك،
-        ثم تعتمدهم من صفحة الفريق. لا تنشره علنًا.
+        {t("شارك هذا الكود مع مهندسي مكتبك. يكتبونه عند إنشاء حساب فينضمّون لمكتبك، ثم تعتمدهم من صفحة الفريق. لا تنشره علنًا.")}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <code className="rounded-lg px-3 py-2 text-base font-bold tracking-widest"
@@ -222,12 +222,12 @@ function TeamInvite({ license }) {
           {copied ? "✓ تم النسخ" : "نسخ"}
         </button>
         <span className="text-xs text-muted">
-          الأعضاء: {license.membersCount} من {license.seats} مقعدًا
+          الأعضاء: {license.membersCount} {t("من")} {license.seats} {t("مقعدًا")}
         </span>
       </div>
       {license.membersCount >= license.seats && (
         <div className="mt-2 text-xs font-semibold" style={{ color: "#7A5E22" }}>
-          اكتمل عدد المقاعد — تواصل معنا لزيادتها قبل إضافة عضو جديد.
+          {t("اكتمل عدد المقاعد — تواصل معنا لزيادتها قبل إضافة عضو جديد.")}
         </div>
       )}
     </div>
@@ -266,16 +266,16 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl font-bold text-navy">ملفات ومستندات العملاء</h2>
-          <p className="mt-1 text-xs text-muted">مقايسة، عقد، عرض تقديمي وكشف حركة — لكل عميل، من مكان واحد.</p>
+          <h2 className="text-xl font-bold text-navy">{t("ملفات ومستندات العملاء")}</h2>
+          <p className="mt-1 text-xs text-muted">{t("مقايسة، عقد، عرض تقديمي وكشف حركة — لكل عميل، من مكان واحد.")}</p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <button onClick={() => exportPipelineSummary(clients, settings)} className="btn btn-primary">
-            <Download size={15} /> ملخص كل العملاء
+            <Download size={15} /> {t("ملخص كل العملاء")}
           </button>
           {/* للمحاسب: كشف حركة موحّد بدل نقل الأرقام شفهيًا */}
-          <button onClick={() => exportLedger(clients, settings)} className="btn btn-gold" title="كشف حركة بكل العقود والتحصيلات والمصروفات">
-            <FileSpreadsheet size={15} /> دفتر الحركة للمحاسب
+          <button onClick={() => exportLedger(clients, settings)} className="btn btn-gold" title={t("كشف حركة بكل العقود والتحصيلات والمصروفات")}>
+            <FileSpreadsheet size={15} /> {t("دفتر الحركة للمحاسب")}
           </button>
         </div>
       </div>
@@ -283,7 +283,7 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
       {clients.length > 0 && (
         <div className="mb-3">
           <input
-            placeholder="بحث بالاسم أو المهندس المسؤول..."
+            placeholder={t("بحث بالاسم أو المهندس المسؤول...")}
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full max-w-sm rounded-lg py-2 px-3 text-sm"
@@ -294,22 +294,22 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
 
       {clients.length === 0 ? (
         <div className="rounded-xl p-10 text-center" style={{ backgroundColor: "#FFFFFF", border: `1px dashed ${BORDER}`, color: MUTED }}>
-          لا يوجد عملاء بعد.
+          {t("لا يوجد عملاء بعد.")}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr style={{ backgroundColor: NAVY, color: "#FFFFFF" }}>
-                <SortHeader label="العميل" sortKey="name_asc" />
-                <th className="p-3 text-center font-bold">المهندس المسؤول</th>
-                <SortHeader label="التقدم بالموقع" sortKey="progress_desc" />
-                <th className="p-3 text-center font-bold">المرحلة</th>
-                <SortHeader label="الإجمالي" sortKey="value_desc" />
-                <th className="p-3 text-center font-bold">المقايسة</th>
-                <th className="p-3 text-center font-bold">العرض التقديمي</th>
-                <th className="p-3 text-center font-bold">العقد</th>
-                <th className="p-3 text-right font-bold">رابط مجلد الملفات</th>
+                <SortHeader label={t("العميل")} sortKey="name_asc" />
+                <th className="p-3 text-center font-bold">{t("المهندس المسؤول")}</th>
+                <SortHeader label={t("التقدم بالموقع")} sortKey="progress_desc" />
+                <th className="p-3 text-center font-bold">{t("المرحلة")}</th>
+                <SortHeader label={t("الإجمالي")} sortKey="value_desc" />
+                <th className="p-3 text-center font-bold">{t("المقايسة")}</th>
+                <th className="p-3 text-center font-bold">{t("العرض التقديمي")}</th>
+                <th className="p-3 text-center font-bold">{t("العقد")}</th>
+                <th className="p-3 text-right font-bold">{t("رابط مجلد الملفات")}</th>
               </tr>
             </thead>
             <tbody>
@@ -328,24 +328,24 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
                       )}
                     </td>
                     <td className="p-3 text-center"><Badge text={c.stage} color={STAGE_COLORS[c.stage] || MUTED} /></td>
-                    <td className="p-3 text-center font-bold text-navy">{fmt(calc.grandTotal)} ج.م</td>
+                    <td className="p-3 text-center font-bold text-navy">{fmt(calc.grandTotal)} {t("ج.م")}</td>
                     <td className="p-3 text-center">
                       <button onClick={() => exportFullBOQ(c, settings, { includeCost: can(currentMember, "viewCostBasis"), priceBook })} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>
-                        <FileSpreadsheet size={13} /> تحميل
+                        <FileSpreadsheet size={13} /> {t("تحميل")}
                       </button>
                     </td>
                     <td className="p-3 text-center">
                       <button onClick={() => buildAndDownloadClientPptx(c, calc, settings)} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#DCE6F5", color: "#6B5B7B" }}>
-                        <FileText size={13} /> تحميل
+                        <FileText size={13} /> {t("تحميل")}
                       </button>
                     </td>
                     <td className="p-3 text-center">
                       {contractReady ? (
                         <button onClick={() => generateContractDocx(c, calc, settings).then(d => downloadDocx(`عقد_${c.name || "عميل"}.docx`, d))} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ backgroundColor: "#F6EAD6", color: "#7A5E22" }}>
-                          <FileText size={13} /> تحميل العقد
+                          <FileText size={13} /> {t("تحميل العقد")}
                         </button>
                       ) : (
-                        <span className="text-xs text-muted">بعد التعاقد</span>
+                        <span className="text-xs text-muted">{t("بعد التعاقد")}</span>
                       )}
                     </td>
                     <td className="p-3">
@@ -353,7 +353,7 @@ function ClientsTable({ clients, settings, currentMember, priceBook, onUpdate })
                         <input
                           value={c.folderLink || ""}
                           onChange={e => onUpdate(c.id, { folderLink: e.target.value })}
-                          placeholder="الصق رابط مجلد Google Drive هنا"
+                          placeholder={t("الصق رابط مجلد Google Drive هنا")}
                           className="flex-1 rounded-md px-2 py-1.5 text-xs"
                           style={{ border: `1px solid ${BORDER}` }}
                         />
@@ -415,7 +415,7 @@ function StageValueChart({ stats }) {
         const pct = (val / maxVal) * 100;
         return (
           <div key={s} className="flex items-center gap-3">
-            <span className="shrink-0 text-xs font-semibold text-ink" style={{ width: 96 }}>{s}</span>
+            <span className="shrink-0 text-xs font-semibold text-ink" style={{ width: 96 }}>{t(s)}</span>
             <div className="relative h-6 flex-1 overflow-hidden rounded bg-light">
               <div
                 className="absolute inset-y-0 right-0 rounded transition-all"
@@ -503,7 +503,7 @@ function AppInner() {
   const [contractorBook, setContractorBook] = useState(EMPTY_BOOK);
 
   /* ═══ اللغة ═══
-     الاختيار محفوظ محليًا ويُطبَّق على عنصر <html> نفسه، فينقلب اتجاه
+     الاختيار محفوظ محليًا ويُطبَّق على عنصر html نفسه، فينقلب اتجاه
      الصفحة كاملًا بلا شرط في كل شاشة. الخطّاف هنا ليعيد تصيير الشجرة
      عند التبديل — موضعه قبل أي return مبكّر التزامًا بقواعد الخطّافات. */
   const lang = useLang();
@@ -623,11 +623,18 @@ function AppInner() {
   const [connectionError, setConnectionError] = useState(false);
   const [connectionErrorDetail, setConnectionErrorDetail] = useState("");
 
+  /*  مهلة الاتصال عشر ثوانٍ. عشر ثوانٍ أمام دوّارة صامتة تبدو للمستخدم
+      عطلًا لا انتظارًا، فيغلق الصفحة قبل أن تنتهي. بعد أربع ثوانٍ نقول
+      له ما يجري ونضع بين يديه مخرجًا فوريًا للعمل محليًا.  */
+  const [slowStart, setSlowStart] = useState(false);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
       setConnectionError(false);
       setConnectionErrorDetail("");
+      setSlowStart(false);
+      const slowTimer = setTimeout(() => setSlowStart(true), 4000);
       try {
         if (simpleMode) {
           await withTimeout(ensureSimpleSession(), 10000);
@@ -649,6 +656,8 @@ function AppInner() {
           setConnectionErrorDetail(e?.message || String(e));
         }
       }
+      clearTimeout(slowTimer);
+      setSlowStart(false);
       setLoading(false);
     })();
   }, [cloud, simpleMode, reloadAll, checkCloudStatus, ensureSimpleSession]);
@@ -785,7 +794,7 @@ function AppInner() {
     await saveClient(c);
     setSelectedId(c.id);
     setTab("clients"); setSection("clients");
-    showToast(template ? `عميل جديد من قالب "${template.name}"` : "تمت إضافة عميل جديد");
+    showToast(template ? `${t("عميل جديد من قالب")} "${t(template.name)}"` : t("تمت إضافة عميل جديد"));
   };
 
   const performDeleteClient = async (id) => {
@@ -884,7 +893,20 @@ function AppInner() {
       <div className="flex h-[600px] items-center justify-center" style={{ fontFamily: "inherit" }}>
         <div className="flex flex-col items-center gap-3 text-muted">
           <Loader2 className="animate-spin" size={28} />
-          <div className="text-sm">جاري تحميل بيانات العملاء…</div>
+          <div className="text-sm">{t("جاري تحميل بيانات العملاء…")}</div>
+          {slowStart && (
+            <div style={{ textAlign: "center", maxWidth: 320 }}>
+              <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.9, marginBottom: 10 }}>
+                {t("الاتصال بالخادم يستغرق وقتًا أطول من المعتاد. ننتظر عشر ثوانٍ ثم نعرض لك الخيارات — أو ابدأ الآن على النسخة المحفوظة في هذا الجهاز.")}
+              </div>
+              <button
+                onClick={() => { setLoading(false); setSlowStart(false); }}
+                style={{ border: `1px solid ${LINE}`, background: PAPER, padding: "7px 16px",
+                         fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                {t("المتابعة ببيانات هذا الجهاز")}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -894,9 +916,9 @@ function AppInner() {
     return (
       <div className="flex min-h-[700px] items-center justify-center" style={{ backgroundColor: LIGHT }}>
         <div className="w-full max-w-md rounded-2xl p-8 text-center shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-          <div className="mb-2 text-lg font-bold" style={{ color: "#A8322B" }}>تعذر الاتصال بالخادم السحابي</div>
+          <div className="mb-2 text-lg font-bold" style={{ color: "#A8322B" }}>{t("تعذر الاتصال بالخادم السحابي")}</div>
           <p className="mb-3 text-sm leading-6 text-muted">
-            تأكد من صحة رابط ومفتاح Supabase في الإعدادات، ومن اتصالك بالإنترنت. بياناتك المحلية السابقة لم تتأثر.
+            {t("تأكد من صحة رابط ومفتاح Supabase في الإعدادات، ومن اتصالك بالإنترنت. بياناتك المحلية السابقة لم تتأثر.")}
           </p>
           {connectionErrorDetail && (
             <div className="mb-5 rounded-lg p-3 text-left text-xs" style={{ backgroundColor: "#FCE9E9", color: "#8A1414", direction: "ltr", wordBreak: "break-word" }}>
@@ -908,13 +930,13 @@ function AppInner() {
             className="mb-2 w-full rounded-lg py-2.5 text-sm font-bold text-white"
             style={{ backgroundColor: "#4A6152" }}
           >
-            إعادة المحاولة
+            {t("إعادة المحاولة")}
           </button>
           <button
             onClick={() => { setCloudConfig(null); window.location.reload(); }}
             className="w-full rounded-lg py-2.5 text-sm font-bold text-white bg-navy"
           >
-            تعطيل المزامنة السحابية والعودة للتخزين المحلي
+            {t("تعطيل المزامنة السحابية والعودة للتخزين المحلي")}
           </button>
         </div>
       </div>
@@ -969,7 +991,7 @@ function AppInner() {
 
         {/* ═══ الأقسام الثلاثة ═══
             نص عارٍ تحته خط عند النشاط — لا أقراص ولا أيقونات ملوّنة. */}
-        <nav className="-mx-1 flex overflow-x-auto px-5 sm:px-9" style={{ scrollbarWidth: "none" }} aria-label="الأقسام الرئيسية">
+        <nav className="-mx-1 flex overflow-x-auto px-5 sm:px-9" style={{ scrollbarWidth: "none" }} aria-label={t("الأقسام الرئيسية")} data-nav="sections">
           {SECTIONS.map(({ key, label }) => {
             const active = section === key;
             return (
@@ -991,7 +1013,7 @@ function AppInner() {
       {subTabs.length > 1 && (
         <div className="flex overflow-x-auto border-b px-5 sm:px-9"
              style={{ backgroundColor: PAPER, borderColor: BORDER, scrollbarWidth: "none" }}
-             aria-label="أقسام فرعية">
+             aria-label={t("أقسام فرعية")} data-nav="subtabs">
           {subTabs.map(({ key, label, Icon }) => {
             const active = tab === key;
             return (
@@ -1020,7 +1042,7 @@ function AppInner() {
         >
           <AlertCircle size={16} className="shrink-0" />
           <span>{errorToast}</span>
-          <button onClick={() => setErrorToast(null)} className="shrink-0 opacity-80" aria-label="إغلاق التنبيه">
+          <button onClick={() => setErrorToast(null)} className="shrink-0 opacity-80" aria-label={t("إغلاق التنبيه")}>
             <X size={15} />
           </button>
         </div>
@@ -1152,10 +1174,10 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
 
       {/* سبع خانات في سبعة أعمدة — الشبكة السداسية كانت تترك فجوة */}
       <div className="mb-10 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-4 lg:grid-cols-7">
-        <StatCard label="إجمالي العملاء" value={stats.count} />
-        <StatCard label="إجمالي قيمة خط الأعمال" value={fmt(stats.totalValue)} sub={currency()} accent={COPPER} />
+        <StatCard label={t("إجمالي العملاء")} value={stats.count} />
+        <StatCard label={t("إجمالي قيمة خط الأعمال")} value={fmt(stats.totalValue)} sub={currency()} accent={COPPER} />
         {STAGES.map(s => (
-          <StatCard key={s} label={s} value={stats.byStage[s].count} sub={fmt(stats.byStage[s].value) + " " + currency()} />
+          <StatCard key={s} label={t(s)} value={stats.byStage[s].count} sub={fmt(stats.byStage[s].value) + " " + currency()} />
         ))}
       </div>
 
@@ -1163,13 +1185,13 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
         <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
           <div className="mb-5 h-section">{t("قيمة خط الأعمال حسب المرحلة")}</div>
           {stats.count > 0 ? <StageValueChart stats={stats} /> : (
-            <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
+            <div className="flex h-40 items-center justify-center text-sm text-muted">{t("لا يوجد بيانات بعد")}</div>
           )}
         </div>
         <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
           <div className="mb-5 h-section">{t("نمو خط الأعمال آخر 6 أشهر")}</div>
           {clients.length > 0 ? <div className="gridpaper"><MonthlyTrendChart clients={clients} settings={settings} /></div> : (
-            <div className="flex h-40 items-center justify-center text-sm text-muted">لا يوجد بيانات بعد</div>
+            <div className="flex h-40 items-center justify-center text-sm text-muted">{t("لا يوجد بيانات بعد")}</div>
           )}
         </div>
       </div>
@@ -1179,11 +1201,11 @@ function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
         <div className="flex h-2 w-full overflow-hidden" style={{ backgroundColor: STONE }}>
           {STAGES.map(s => {
             const pct = stats.count ? (stats.byStage[s].count / stats.count) * 100 : 0;
-            return pct > 0 ? <div key={s} style={{ width: pct + "%", backgroundColor: STAGE_COLORS[s] }} title={s} /> : null;
+            return pct > 0 ? <div key={s} style={{ width: pct + "%", backgroundColor: STAGE_COLORS[s] }} title={t(s)} /> : null;
           })}
         </div>
         <div className="mt-3 flex flex-wrap gap-3">
-          {STAGES.map(s => <Badge key={s} text={`${s} (${stats.byStage[s].count})`} color={STAGE_COLORS[s]} />)}
+          {STAGES.map(s => <Badge key={s} text={`${t(s)} (${stats.byStage[s].count})`} color={STAGE_COLORS[s]} />)}
         </div>
       </div>
 
@@ -1252,9 +1274,9 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings, coverUrls = 
             key={tpl.id || tpl.name}
             onClick={() => onAdd(tpl)}
             className="btn"
-            title={`${tpl.area} م²`}
+            title={`${tpl.area} ${t("م²")}`}
           >
-            {tpl.name}
+            {t(tpl.name)}
           </button>
         ))}
       </div>
@@ -1318,8 +1340,8 @@ function ClientList({ clients, onAdd, onSelect, onDelete, settings, coverUrls = 
                   )}
 
                   <div className="metagrid" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))", columnGap: 14, marginTop: 13 }}>
-                    <Meta label="المساحة" value={`${c.area} م²`} />
-                    <Meta label="المهندس" value={c.engineer || "—"} />
+                    <Meta label={t("المساحة")} value={`${c.area} ${t("م²")}`} />
+                    <Meta label={t("المهندس")} value={c.engineer || "—"} />
                     <Meta label={calc.frozen ? "قيمة العقد" : "تقديري"} value={`${fmt(calc.grandTotal)} ${currency()}`} />
                   </div>
                 </div>
@@ -1377,20 +1399,20 @@ function ClientGallery({ client, onChange }) {
   return (
     <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginTop: 22 }}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="h-section">معرض العميل</span>
+        <span className="h-section">{t("معرض العميل")}</span>
         <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}>
           {busy ? t("جاري الرفع…") : "إضافة صور"}
         </button>
       </div>
       <div className="mb-3 text-[11px]" style={{ color: MUTED, lineHeight: 1.9 }}>
-        هذه الصور وحدها يراها العميل في بوابته. الأولى هي صورة الواجهة عنده.
+        {t("هذه الصور وحدها يراها العميل في بوابته. الأولى هي صورة الواجهة عنده.")}
       </div>
 
       {err && <div className="mb-2 text-[11px]" style={{ color: DANGER }}>{err}</div>}
 
       {gallery.length === 0 ? (
         <div className="py-8 text-center text-[12px]" style={{ color: MUTED }}>
-          لا صور بعد — ارفع لقطات التنفيذ أو مشاهد الريندر.
+          {t("لا صور بعد — ارفع لقطات التنفيذ أو مشاهد الريندر.")}
         </div>
       ) : (
         <div className="gallery">
@@ -1398,20 +1420,20 @@ function ClientGallery({ client, onChange }) {
             <div key={g.path} className="frame" style={{ cursor: "default" }}>
               <img src={g.url || galleryPublicUrl(g.path)} alt="" loading="lazy" />
               <div style={{ position: "absolute", insetInlineStart: 6, top: 6, display: "flex", gap: 4 }}>
-                <button onClick={() => move(i, -1)} title="تقديم"
+                <button onClick={() => move(i, -1)} title={t("تقديم")}
                         style={{ background: "rgba(10,9,8,.72)", color: "#fff", border: "none",
                                  width: 26, height: 26, cursor: "pointer", fontSize: 13 }}>›</button>
-                <button onClick={() => move(i, 1)} title="تأخير"
+                <button onClick={() => move(i, 1)} title={t("تأخير")}
                         style={{ background: "rgba(10,9,8,.72)", color: "#fff", border: "none",
                                  width: 26, height: 26, cursor: "pointer", fontSize: 13 }}>‹</button>
-                <button onClick={() => remove(g)} title="حذف"
+                <button onClick={() => remove(g)} title={t("حذف")}
                         style={{ background: "rgba(158,43,34,.85)", color: "#fff", border: "none",
                                  width: 26, height: 26, cursor: "pointer", fontSize: 13 }}>✕</button>
               </div>
               {i === 0 && (
                 <span style={{ position: "absolute", insetInlineEnd: 6, top: 6, background: "rgba(10,9,8,.72)",
                                color: "#fff", fontSize: 9.5, padding: "3px 8px", letterSpacing: ".1em" }}>
-                  الواجهة
+                  {t("الواجهة")}
                 </span>
               )}
             </div>
@@ -1490,7 +1512,7 @@ function ProjectHeader({ client, coverUrl, calc, onChange }) {
 
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <MetaGrid cols={4} style={{ flex: "1 1 420px", columnGap: 22 }} items={[
-          { label: "المساحة", value: `${client.area} م²` },
+          { label: t("المساحة"), value: `${client.area} ${t("م²")}` },
           { label: "المهندس", value: client.engineer || "—" },
           { label: "الحالة", value: t(client.stage) },
           { label: calc.frozen ? "قيمة العقد" : "تقديري", value: `${fmt(calc.grandTotal)} ${currency()}` },
@@ -1578,7 +1600,7 @@ function PortalAccessPanel({ kind, id, name, onError, brand = {} }) {
 
       {!isCloudMode() && (
         <div style={{ fontSize: 11.5, color: DANGER, marginBottom: 8, lineHeight: 1.8 }}>
-          الوضع محلي — حسابات الدخول تحتاج تفعيل المزامنة السحابية من الإعدادات
+          {t("الوضع محلي — حسابات الدخول تحتاج تفعيل المزامنة السحابية من الإعدادات")}
         </div>
       )}
 
@@ -1603,8 +1625,8 @@ function PortalAccessPanel({ kind, id, name, onError, brand = {} }) {
       {cred && (
         <div style={{ marginTop: 14, border: `1px solid ${INK}`, padding: "12px 14px" }}>
           <div className="metagrid" style={{ gridTemplateColumns: "repeat(2, minmax(0,1fr))", columnGap: 14, borderTop: "none" }}>
-            <Meta label="اسم المستخدم" value={cred.username} />
-            <Meta label="كلمة السر" value={cred.password} />
+            <Meta label={t("اسم المستخدم")} value={cred.username} />
+            <Meta label={t("كلمة السر")} value={cred.password} />
           </div>
           <div style={{ fontSize: 11, color: DANGER, marginTop: 8 }}>
             {t("احفظ كلمة السر الآن — لن تظهر مرة أخرى")}
@@ -1650,19 +1672,19 @@ function PriceAnomalies({ client, allClients, priceBook, currentMember }) {
   return (
     <div className="sheet mt-4 p-3" style={{ borderColor: "#8A5A2B" }}>
       <div className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: "#8A5A2B" }}>
-        <AlertCircle size={14} /> أسعار تستحق المراجعة
+        <AlertCircle size={14} /> {t("أسعار تستحق المراجعة")}
       </div>
       {outliers.map(o => (
         <div key={o.id} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
           <span className="code">{o.id}</span>
           <span className="font-semibold text-ink">{o.name}</span>
           <span className="num text-muted">
-            أدخلت <b style={{ color: "#A8322B" }}>{fmt(o.entered)}</b> — المعتاد لديك قرابة <b>{fmt(o.reference)}</b>
+            أدخلت <b style={{ color: "#A8322B" }}>{fmt(o.entered)}</b> {t("— المعتاد لديك قرابة")} <b>{fmt(o.reference)}</b>
           </span>
         </div>
       ))}
       <div className="mt-1.5 text-[10px] text-muted">
-        قد يكون مقصودًا. هذا تنبيه لا منع.
+        {t("قد يكون مقصودًا. هذا تنبيه لا منع.")}
       </div>
     </div>
   );
@@ -1690,7 +1712,7 @@ function ProjectSpine({ client }) {
                   className="mt-1 whitespace-nowrap text-[10px]"
                   style={{ color: here ? color : "var(--color-muted)", fontWeight: here ? 700 : 500 }}
                 >
-                  {st}
+                  {t(st)}
                 </span>
               </div>
               {i < STAGES.length - 1 && (
@@ -1704,12 +1726,12 @@ function ProjectSpine({ client }) {
       {/* ما عُلّق على هذه النقطة من أحداث موثّقة */}
       {(client.contract || (client.variations || []).length > 0 || client.progressPercent > 0) && (
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t pt-2 text-[10px]" style={{ borderColor: "var(--color-line)" }}>
-          {client.contract && <span className="text-muted">عقد مجمّد · <b className="num text-ink">{client.contract.signedAt}</b></span>}
+          {client.contract && <span className="text-muted">{t("عقد مجمّد ·")} <b className="num text-ink">{client.contract.signedAt}</b></span>}
           {(client.variations || []).length > 0 && (
-            <span className="text-muted">أوامر تغيير · <b className="num text-ink">{(client.variations || []).length}</b></span>
+            <span className="text-muted">{t("أوامر تغيير ·")} <b className="num text-ink">{(client.variations || []).length}</b></span>
           )}
           {client.progressPercent > 0 && (
-            <span className="text-muted">تنفيذ · <b className="num text-ink">{client.progressPercent}%</b>{client.lastVisitAt ? ` حتى ${client.lastVisitAt}` : ""}</span>
+            <span className="text-muted">{t("تنفيذ ·")} <b className="num text-ink">{client.progressPercent}%</b>{client.lastVisitAt ? ` حتى ${client.lastVisitAt}` : ""}</span>
           )}
         </div>
       )}
@@ -1731,14 +1753,14 @@ function RoomSchedule({ client, onChange }) {
   return (
     <div className="sheet mt-4 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="h-section">جدول الغرف</span>
+        <span className="h-section">{t("جدول الغرف")}</span>
         <div className="flex flex-wrap gap-1.5">
           <button onClick={() => setRooms([...rooms, newRoom(rooms.length + 1)])} className="btn btn-primary">
-            <Plus size={14} /> غرفة
+            <Plus size={14} /> {t("غرفة")}
           </button>
           <label className="btn" style={{ border: "1px solid var(--color-line)", color: NAVY, cursor: "pointer" }}
-                 title="صدّر Room Schedule من Revit إلى CSV واستورده هنا">
-            <UploadCloud size={14} /> استيراد من BIM
+                 title={t("صدّر Room Schedule من Revit إلى CSV واستورده هنا")}>
+            <UploadCloud size={14} /> {t("استيراد من BIM")}
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={async (e) => {
               const f = e.target.files?.[0]; e.target.value = "";
               if (!f) return;
@@ -1757,8 +1779,7 @@ function RoomSchedule({ client, onChange }) {
       )}
       {rooms.length === 0 ? (
         <div className="py-4 text-center text-xs text-muted">
-          أدخل الغرف يدويًا، أو استورد Room Schedule من نموذج Revit مباشرة —
-          فتُحسب كميات الأرضيات والسكيرتنج وسيراميك الحمامات تلقائيًا.
+          {t("أدخل الغرف يدويًا، أو استورد Room Schedule من نموذج Revit مباشرة — فتُحسب كميات الأرضيات والسكيرتنج وسيراميك الحمامات تلقائيًا.")}
         </div>
       ) : (
         <>
@@ -1767,17 +1788,17 @@ function RoomSchedule({ client, onChange }) {
               const m = roomMetrics(r);
               return (
                 <div key={r.id || i} className="flex flex-wrap items-center gap-2">
-                  <input className="inp" style={{ width: 120 }} placeholder="الاسم"
+                  <input className="inp" style={{ width: 120 }} placeholder={t("الاسم")}
                     value={r.name || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
                   <select className="inp" style={{ width: 110 }} value={r.type}
                     onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, type: e.target.value } : x))}>
                     {Object.keys(ROOM_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
-                  <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder="طول"
+                  <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder={t("طول")}
                     value={r.length || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, length: Number(e.target.value) || 0 } : x))} />
-                  <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder="عرض"
+                  <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder={t("عرض")}
                     value={r.width || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, width: Number(e.target.value) || 0 } : x))} />
-                  <span className="num text-xs text-muted" style={{ width: 70 }}>{m.area} م²</span>
+                  <span className="num text-xs text-muted" style={{ width: 70 }}>{m.area} {t("م²")}</span>
                   <button onClick={() => setRooms(rooms.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500">
                     <Trash2 size={14} />
                   </button>
@@ -1787,20 +1808,20 @@ function RoomSchedule({ client, onChange }) {
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 sm:grid-cols-4" style={{ borderColor: "var(--color-line)" }}>
-            <div><span className="lbl">أرضيات</span><span className="tb-value">{q.floorArea} م²</span></div>
-            <div><span className="lbl">سكيرتنج</span><span className="tb-value">{q.dryPerimeter} م</span></div>
-            <div><span className="lbl">حوائط رطبة</span><span className="tb-value">{q.wetWallArea} م²</span></div>
-            <div><span className="lbl">حمامات</span><span className="tb-value">{q.bathrooms}</span></div>
+            <div><span className="lbl">{t("أرضيات")}</span><span className="tb-value">{q.floorArea} {t("م²")}</span></div>
+            <div><span className="lbl">{t("سكيرتنج")}</span><span className="tb-value">{q.dryPerimeter} {t("م")}</span></div>
+            <div><span className="lbl">{t("حوائط رطبة")}</span><span className="tb-value">{q.wetWallArea} {t("م²")}</span></div>
+            <div><span className="lbl">{t("حمامات")}</span><span className="tb-value">{q.bathrooms}</span></div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={() => apply(false)} className="btn btn-gold">تطبيق على المقايسة</button>
+            <button onClick={() => apply(false)} className="btn btn-gold">{t("تطبيق على المقايسة")}</button>
             <button onClick={() => apply(true)} className="btn" style={{ border: "1px solid var(--color-line)", color: NAVY }}>
-              تطبيق واستبدال اليدوي
+              {t("تطبيق واستبدال اليدوي")}
             </button>
           </div>
           <div className="mt-1.5 text-[10px] text-muted">
-            التطبيق العادي لا يمس أي كمية أدخلتها بنفسك — الاستبدال يدهسها.
+            {t("التطبيق العادي لا يمس أي كمية أدخلتها بنفسك — الاستبدال يدهسها.")}
           </div>
         </>
       )}
@@ -1823,13 +1844,13 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
     <div className="sheet mt-4 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-sm font-bold text-navy">المقايسة بمراحل التنفيذ الخمس</div>
+          <div className="text-sm font-bold text-navy">{t("المقايسة بمراحل التنفيذ الخمس")}</div>
           <div className="text-[11px] text-muted">
-            قيمة كل مرحلة تُحصَّل كاملة قبل بدء العمل فيها · نسبة الربح تُحصَّل بعد تسليم المرحلة وقبولها
+            {t("قيمة كل مرحلة تُحصَّل كاملة قبل بدء العمل فيها · نسبة الربح تُحصَّل بعد تسليم المرحلة وقبولها")}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="lbl">نسبة الربح المتفق عليها</span>
+          <span className="lbl">{t("نسبة الربح المتفق عليها")}</span>
           <input
             type="number" inputMode="decimal" step="0.5" min="0" max="100"
             disabled={!mayEditPrice}
@@ -1848,7 +1869,7 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
       {plan.pctMissing && (
         <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold"
              style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
-          لم تُحدَّد نسبة الربح — كل أعمدة الربح ستظهر صفرًا. اضبطها هنا لهذا العميل، أو من الإعدادات لكل العملاء.
+          {t("لم تُحدَّد نسبة الربح — كل أعمدة الربح ستظهر صفرًا. اضبطها هنا لهذا العميل، أو من الإعدادات لكل العملاء.")}
         </div>
       )}
 
@@ -1866,23 +1887,23 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                       style={{ backgroundColor: color }}>{row.order}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold" style={{ color }}>{row.phase}</span>
+                  <span className="block text-sm font-bold" style={{ color }}>{t(row.phase)}</span>
                   <span className="block text-[10px] text-muted">
-                    {row.empty ? "لا بنود مُضمَّنة" : `${row.itemCount} بند · بنود ${fmt(row.base)} + إشراف واحتياطي وضريبة`}
+                    {row.empty ? t("لا بنود مُضمَّنة") : `${row.itemCount} ${t("بند")} · ${t("بنود")} ${fmt(row.base)} ${t("+ إشراف واحتياطي وضريبة")}`}
                   </span>
                 </span>
                 <span className="text-left">
-                  <span className="lbl block">قبل البدء</span>
+                  <span className="lbl block">{t("قبل البدء")}</span>
                   <span className="num block text-sm font-bold text-navy">{fmt(row.quote)}</span>
                 </span>
                 <span className="text-left" style={{ minWidth: 88 }}>
-                  <span className="lbl block">بعد التسليم</span>
+                  <span className="lbl block">{t("بعد التسليم")}</span>
                   <span className="num block text-sm font-bold" style={{ color: row.profitDue > 0 ? "#4A6152" : MUTED }}>
                     {fmt(row.profitDue)}
                   </span>
                 </span>
                 <span className="text-left" style={{ minWidth: 92 }}>
-                  <span className="lbl block">إجمالي المرحلة</span>
+                  <span className="lbl block">{t("إجمالي المرحلة")}</span>
                   <span className="num block text-sm font-bold" style={{ color: "#7A5E22" }}>{fmt(row.phaseTotal)}</span>
                 </span>
                 <ChevronLeft size={14} style={{ transform: isOpen ? "rotate(-90deg)" : "none", color: MUTED }} />
@@ -1895,14 +1916,14 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
                          style={{ borderColor: "var(--color-line)" }}>
                       <span className="min-w-0 flex-1 text-[11px]">{l.name}</span>
                       <span className="text-[10px] text-muted">{Math.round(l.qty * 100) / 100} {l.unit}</span>
-                      <span className="num w-24 text-left text-[11px] font-bold text-navy">{fmt(l.total)} ج.م</span>
+                      <span className="num w-24 text-left text-[11px] font-bold text-navy">{fmt(l.total)} {t("ج.م")}</span>
                     </div>
                   ))}
                   <div className="mt-2 flex flex-col gap-0.5 text-[11px]">
-                    <div className="flex justify-between"><span className="text-muted">إجمالي البنود</span><span className="num font-bold">{fmt(p.base)}</span></div>
-                    {p.supervision > 0 && <div className="flex justify-between"><span className="text-muted">إشراف هندسي</span><span className="num">{fmt(p.supervision)}</span></div>}
-                    {p.contingency > 0 && <div className="flex justify-between"><span className="text-muted">احتياطي</span><span className="num">{fmt(p.contingency)}</span></div>}
-                    <div className="flex justify-between"><span className="text-muted">ضريبة القيمة المضافة</span><span className="num">{fmt(p.vat)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted">{t("إجمالي البنود")}</span><span className="num font-bold">{fmt(p.base)}</span></div>
+                    {p.supervision > 0 && <div className="flex justify-between"><span className="text-muted">{t("إشراف هندسي")}</span><span className="num">{fmt(p.supervision)}</span></div>}
+                    {p.contingency > 0 && <div className="flex justify-between"><span className="text-muted">{t("احتياطي")}</span><span className="num">{fmt(p.contingency)}</span></div>}
+                    <div className="flex justify-between"><span className="text-muted">{t("ضريبة القيمة المضافة")}</span><span className="num">{fmt(p.vat)}</span></div>
                   </div>
                 </div>
               )}
@@ -1912,9 +1933,9 @@ export function PhaseBOQ({ client, settings, currentMember, onChange }) {
       </div>
 
       <div className="mt-3 border-t pt-3" style={{ borderColor: BORDER }}>
-        <SummaryRow label="إجمالي المقايسة (يُحصَّل قبل المراحل)" value={plan.quoteTotal} />
-        <SummaryRow label={`إجمالي الربح ${plan.pct > 0 ? `(${(plan.pct * 100).toFixed(1)}%)` : ""} — بعد التسليمات`} value={plan.profitTotal} />
-        <SummaryRow label="إجمالي قيمة التعاقد" value={plan.contractTotal} bold />
+        <SummaryRow label={t("إجمالي المقايسة (يُحصَّل قبل المراحل)")} value={plan.quoteTotal} />
+        <SummaryRow label={`${t("إجمالي الربح")} ${plan.pct > 0 ? `(${(plan.pct * 100).toFixed(1)}%)` : ""} ${t("— بعد التسليمات")}`} value={plan.profitTotal} />
+        <SummaryRow label={t("إجمالي قيمة التعاقد")} value={plan.contractTotal} bold />
       </div>
     </div>
   );
@@ -1932,7 +1953,7 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
     const list = [...(client.receipts || [])];
     const rc = newReceipt(client.id, list.length + 1, row.phase, kind);
     rc.amount = Math.round(kind === "profit" ? row.profitRemaining : row.baseRemaining);
-    rc.note = `${kind === "profit" ? "ربح" : "قيمة"} — ${row.phase}`;
+    rc.note = `${kind === "profit" ? t("ربح") : t("قيمة")} — ${t(row.phase)}`;
     onChange({ receipts: [...list, rc] });
   };
   const toggleDelivered = (row) => {
@@ -1954,28 +1975,28 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
   return (
     <div className="sheet p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="h-section">جدول التحصيل بالمراحل</span>
-        <span className="text-[11px] text-muted">نسبة الربح {(plan.pct * 100).toFixed(1)}%</span>
+        <span className="h-section">{t("جدول التحصيل بالمراحل")}</span>
+        <span className="text-[11px] text-muted">{t("نسبة الربح")} {(plan.pct * 100).toFixed(1)}%</span>
       </div>
 
       <div className="mb-3 grid grid-cols-3 gap-2">
         <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: "#EDF2EE" }}>
-          <div className="lbl">المحصّل</div>
+          <div className="lbl">{t("المحصّل")}</div>
           <div className="num text-sm font-bold" style={{ color: "#4A6152" }}>{fmt(plan.collected)}</div>
         </div>
         <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: plan.dueNow > 0 ? "#FBEDEC" : "#F4F1EC" }}>
-          <div className="lbl">المستحق الآن</div>
+          <div className="lbl">{t("المستحق الآن")}</div>
           <div className="num text-sm font-bold" style={{ color: plan.dueNow > 0 ? "#A8322B" : MUTED }}>{fmt(plan.dueNow)}</div>
         </div>
         <div className="rounded-lg p-2.5 text-center bg-light">
-          <div className="lbl">المتبقي على التعاقد</div>
+          <div className="lbl">{t("المتبقي على التعاقد")}</div>
           <div className="num text-sm font-bold text-navy">{fmt(plan.outstanding)}</div>
         </div>
       </div>
 
       {plan.unallocated > 0 && (
         <div className="mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
-          {fmt(plan.unallocated)} ج.م محصّلة غير منسوبة لأي مرحلة — دفعات سُجّلت قبل تفعيل نظام المراحل. انسبها من قائمة الدفعات أدناه.
+          {fmt(plan.unallocated)} {t("ج.م محصّلة غير منسوبة لأي مرحلة — دفعات سُجّلت قبل تفعيل نظام المراحل. انسبها من قائمة الدفعات أدناه.")}
         </div>
       )}
 
@@ -1988,7 +2009,7 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                       style={{ backgroundColor: color }}>{row.order}</span>
-                <span className="min-w-0 flex-1 text-sm font-bold" style={{ color }}>{row.phase}</span>
+                <span className="min-w-0 flex-1 text-sm font-bold" style={{ color }}>{t(row.phase)}</span>
                 <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
                       style={{ backgroundColor: st.bg, color: st.fg }}>
                   {row.statusLabel}
@@ -2001,7 +2022,7 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                     {/* الدفعة الأولى — قبل البدء */}
                     <div className="rounded-lg p-2.5" style={{ backgroundColor: row.baseSettled ? "#EDF2EE" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
                       <div className="flex items-baseline justify-between">
-                        <span className="lbl">قيمة المرحلة — قبل البدء</span>
+                        <span className="lbl">{t("قيمة المرحلة — قبل البدء")}</span>
                         <span className="num text-sm font-bold text-navy">{fmt(row.quote)}</span>
                       </div>
                       <div className="mt-1 h-1 w-full" style={{ backgroundColor: "#E4DFD7" }}>
@@ -2009,12 +2030,12 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                       </div>
                       <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-muted">
-                          محصّل {fmt(row.paidBase)} · متبقٍ {fmt(row.baseRemaining)}
+                          {t("محصّل")} {fmt(row.paidBase)} {t("· متبقٍ")} {fmt(row.baseRemaining)}
                         </span>
                         {mayCollect && row.baseRemaining > 0.5 && (
                           <button onClick={() => addReceiptFor(row, "base")}
                                   className="text-[10px] font-bold underline" style={{ color: NAVY }}>
-                            تسجيل تحصيل
+                            {t("تسجيل تحصيل")}
                           </button>
                         )}
                       </div>
@@ -2023,19 +2044,19 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                     {/* الدفعة الثانية — بعد التسليم */}
                     <div className="rounded-lg p-2.5" style={{ backgroundColor: row.deliveredAt && row.profitSettled ? "#EDF2EE" : "#FAFBFC", border: `1px solid ${BORDER}` }}>
                       <div className="flex items-baseline justify-between">
-                        <span className="lbl">نسبة الربح — بعد التسليم</span>
+                        <span className="lbl">{t("نسبة الربح — بعد التسليم")}</span>
                         <span className="num text-sm font-bold" style={{ color: "#4A6152" }}>{fmt(row.profitDue)}</span>
                       </div>
                       <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-muted">
                           {row.deliveredAt
-                            ? `سُلّمت ${row.deliveredAt} · محصّل ${fmt(row.paidProfit)}`
-                            : "غير مستحقة — المرحلة لم تُسلَّم بعد"}
+                            ? `${t("سُلّمت")} ${row.deliveredAt} · ${t("محصّل")} ${fmt(row.paidProfit)}`
+                            : t("غير مستحقة — المرحلة لم تُسلَّم بعد")}
                         </span>
                         {mayCollect && row.profitClaimable && row.profitRemaining > 0.5 && (
                           <button onClick={() => addReceiptFor(row, "profit")}
                                   className="text-[10px] font-bold underline" style={{ color: "#4A6152" }}>
-                            تسجيل تحصيل
+                            {t("تسجيل تحصيل")}
                           </button>
                         )}
                       </div>
@@ -2045,11 +2066,11 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     {!row.mayStart ? (
                       <span className="text-[11px] font-bold" style={{ color: "#A8322B" }}>
-                        ⛔ لا تبدأ التنفيذ — لم يُحصَّل {fmt(row.baseRemaining)} ج.م من قيمة المرحلة
+                        ⛔ {t("لا تبدأ التنفيذ — لم يُحصَّل")} {fmt(row.baseRemaining)} {t("ج.م من قيمة المرحلة")}
                       </span>
                     ) : (
                       <span className="text-[11px] font-bold" style={{ color: "#4A6152" }}>
-                        ✅ قيمة المرحلة محصّلة — مسموح بالبدء
+                        {t("✅ قيمة المرحلة محصّلة — مسموح بالبدء")}
                       </span>
                     )}
                     {mayCollect && (
@@ -2060,7 +2081,7 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
                                 color: row.deliveredAt ? "#A8322B" : "#FFFFFF",
                                 border: `1px solid ${row.deliveredAt ? "#A8322B" : NAVY}`,
                               }}>
-                        {row.deliveredAt ? "إلغاء تعليم التسليم" : "تعليم المرحلة مُسلَّمة"}
+                        {row.deliveredAt ? t("إلغاء تعليم التسليم") : t("تعليم المرحلة مُسلَّمة")}
                       </button>
                     )}
                   </div>
@@ -2076,20 +2097,20 @@ export function PhaseCollection({ client, settings, currentMember, onChange }) {
 
 /* شريط نِسَب الفئات — يُستعمل في التحليل وفي المقارنة */
 function KindBar({ kinds, total }) {
-  const t = total || COST_KINDS.reduce((s, k) => s + (kinds[k] || 0), 0);
-  if (!(t > 0)) return null;
+  const sum = total || COST_KINDS.reduce((s, k) => s + (kinds[k] || 0), 0);
+  if (!(sum > 0)) return null;
   return (
     <>
       <div className="flex h-2 w-full overflow-hidden rounded" style={{ backgroundColor: "#E4DFD7" }}>
         {COST_KINDS.filter(k => (kinds[k] || 0) > 0).map(k => (
-          <div key={k} title={`${KIND_LABEL[k]} — ${fmt(kinds[k])} ج.م`}
-               style={{ width: `${((kinds[k] || 0) / t) * 100}%`, backgroundColor: KIND_COLOR[k] }} />
+          <div key={k} title={`${t(KIND_LABEL[k])} — ${fmt(kinds[k])} ${t("ج.م")}`}
+               style={{ width: `${((kinds[k] || 0) / sum) * 100}%`, backgroundColor: KIND_COLOR[k] }} />
         ))}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
         {COST_KINDS.filter(k => (kinds[k] || 0) > 0).map(k => (
           <span key={k} style={{ color: KIND_COLOR[k] }}>
-            {KIND_SHORT[k]} <b className="num">{fmt(kinds[k])}</b> ({(((kinds[k] || 0) / t) * 100).toFixed(0)}%)
+            {KIND_SHORT[k]} <b className="num">{fmt(kinds[k])}</b> ({(((kinds[k] || 0) / sum) * 100).toFixed(0)}%)
           </span>
         ))}
       </div>
@@ -2113,11 +2134,11 @@ export function CostAnalysis({ client, priceBook, currentMember }) {
   return (
     <div className="sheet mt-4 p-4">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <span className="h-section">تحليل تكلفة المشروع</span>
-        <span className="num text-sm font-bold text-navy">{fmt(analysis.totalCost)} ج.م</span>
+        <span className="h-section">{t("تحليل تكلفة المشروع")}</span>
+        <span className="num text-sm font-bold text-navy">{fmt(analysis.totalCost)} {t("ج.م")}</span>
       </div>
       <div className="mb-3 text-[11px] text-muted">
-        من دفتر الأسعار — بنفس التصنيف الذي تُسجَّل به مصروفات الموقع، فتصبح المقارنة ممكنة.
+        {t("من دفتر الأسعار — بنفس التصنيف الذي تُسجَّل به مصروفات الموقع، فتصبح المقارنة ممكنة.")}
       </div>
 
       {analysis.totalCost > 0 && (
@@ -2128,10 +2149,10 @@ export function CostAnalysis({ client, priceBook, currentMember }) {
         <div className="mb-3 rounded-lg px-3 py-2 text-[11px] leading-5"
              style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           {analysis.coverage === 0
-            ? "لا يوجد بند محلَّل بعد — حلّل البنود من دفتر الأسعار ليصبح لهذا التقرير معنى."
-            : `التحليل يغطي ${(analysis.coverage * 100).toFixed(0)}% من قيمة المشروع — ${analysis.unanalysed.length} بندًا بلا تحليل.`}
+            ? t("لا يوجد بند محلَّل بعد — حلّل البنود من دفتر الأسعار ليصبح لهذا التقرير معنى.")
+            : `${t("التحليل يغطي")} ${(analysis.coverage * 100).toFixed(0)}${t("% من قيمة المشروع —")} ${analysis.unanalysed.length} ${t("بندًا بلا تحليل.")}`}
           {analysis.unanalysed.length > 0 && (
-            <div className="mt-1">أكبرها: {analysis.unanalysed.slice(0, 3).map(u => u.name).join(" · ")}</div>
+            <div className="mt-1">{t("أكبرها:")} {analysis.unanalysed.slice(0, 3).map(u => t(u.name)).join(" · ")}</div>
           )}
         </div>
       )}
@@ -2143,10 +2164,10 @@ export function CostAnalysis({ client, priceBook, currentMember }) {
             <div key={p.phase} className="rounded-lg p-2.5" style={{ border: `1px solid ${BORDER}` }}>
               <button onClick={() => setOpenPhase(isOpen ? null : p.phase)}
                       className="flex w-full flex-wrap items-baseline justify-between gap-2 text-right">
-                <span className="text-xs font-bold" style={{ color: PHASE_COLORS[p.phase] || NAVY }}>{p.phase}</span>
+                <span className="text-xs font-bold" style={{ color: PHASE_COLORS[p.phase] || NAVY }}>{t(p.phase)}</span>
                 <span className="num text-xs font-bold text-navy">
-                  {fmt(p.analysed)} ج.م
-                  {p.unanalysed > 0 && <span className="mr-1 font-normal text-muted"> (+{fmt(p.unanalysed)} غير محلَّل)</span>}
+                  {fmt(p.analysed)} {t("ج.م")}
+                  {p.unanalysed > 0 && <span className="mr-1 font-normal text-muted"> (+{fmt(p.unanalysed)} {t("غير محلَّل")})</span>}
                 </span>
               </button>
               {p.analysed > 0 && <div className="mt-1.5"><KindBar kinds={p.kinds} total={p.analysed} /></div>}
@@ -2199,33 +2220,33 @@ function DayLabourForm({ onSave, onCancel }) {
 
   return (
     <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 16 }}>
-      <div className="h-section mb-3">عامل باليومية</div>
+      <div className="h-section mb-3">{t("عامل باليومية")}</div>
       <div className="flex flex-wrap items-end gap-2">
         <label className="block" style={{ flex: "1 1 150px" }}>
-          <span className="eyebrow">اسم العامل / المعلّم</span>
+          <span className="eyebrow">{t("اسم العامل / المعلّم")}</span>
           <input className="inp" value={name} onChange={e => setName(e.target.value)}
-                 placeholder="مثال: عم رجب — نقاشة" style={{ marginBottom: 0 }} />
+                 placeholder={t("مثال: عم رجب — نقاشة")} style={{ marginBottom: 0 }} />
         </label>
         <label className="block" style={{ width: 120 }}>
-          <span className="eyebrow">الأجر اليومي</span>
+          <span className="eyebrow">{t("الأجر اليومي")}</span>
           <input className="inp num" type="number" inputMode="decimal" value={rate}
                  onChange={e => setRate(e.target.value)} style={{ marginBottom: 0 }} />
         </label>
         <label className="block" style={{ width: 90 }}>
-          <span className="eyebrow">عدد الأيام</span>
+          <span className="eyebrow">{t("عدد الأيام")}</span>
           <input className="inp num" type="number" inputMode="decimal" value={days}
                  onChange={e => setDays(e.target.value)} style={{ marginBottom: 0 }} />
         </label>
         <label className="block" style={{ width: 150 }}>
-          <span className="eyebrow">المرحلة</span>
+          <span className="eyebrow">{t("المرحلة")}</span>
           <select className="inp" value={phase} onChange={e => setPhase(e.target.value)}
                   style={{ marginBottom: 0 }}>
-            <option value="">— بلا مرحلة —</option>
-            {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+            <option value="">{t("— بلا مرحلة —")}</option>
+            {PHASES.map(p => <option key={p} value={p}>{t(PHASE_SHORT[p])}</option>)}
           </select>
         </label>
         <label className="block" style={{ width: 140 }}>
-          <span className="eyebrow">التاريخ</span>
+          <span className="eyebrow">{t("التاريخ")}</span>
           <input className="inp" type="date" value={date}
                  onChange={e => setDate(e.target.value)} style={{ marginBottom: 0 }} />
         </label>
@@ -2234,11 +2255,11 @@ function DayLabourForm({ onSave, onCancel }) {
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button className="btn btn-primary" disabled={!canSave}
                 onClick={() => onSave({ name: name.trim(), rate, days, phase, date })}>
-          حفظ المصروف
+          {t("حفظ المصروف")}
         </button>
-        <button className="btn" onClick={onCancel}>إلغاء</button>
+        <button className="btn" onClick={onCancel}>{t("إلغاء")}</button>
         <span className="num" style={{ fontSize: 13 }}>
-          الإجمالي: <b>{fmt(total)}</b> {currency()}
+          {t("الإجمالي:")} <b>{fmt(total)}</b> {currency()}
         </span>
       </div>
     </div>
@@ -2294,11 +2315,11 @@ export function ContractorLedger({ client, book, onChange }) {
   return (
     <div className="sheet p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="h-section">حسابات مقاولي الباطن والعمالة</span>
+        <span className="h-section">{t("حسابات مقاولي الباطن والعمالة")}</span>
         <div className="flex flex-wrap items-center gap-2">
           <select className="inp" style={{ width: 210, marginBottom: 0 }} value=""
                   onChange={e => { if (e.target.value) addFromBook(e.target.value); }}>
-            <option value="">— اختر من دفتر المقاولين —</option>
+            <option value="">{t("— اختر من دفتر المقاولين —")}</option>
             {known.filter(r => !already.has(r.key)).map(r => (
               <option key={r.key} value={r.key}>
                 {r.name}{r.trades.length ? ` · ${r.trades[0]}` : ""}{r.phone ? ` · ${r.phone}` : ""}
@@ -2306,16 +2327,15 @@ export function ContractorLedger({ client, book, onChange }) {
             ))}
           </select>
           <button onClick={() => setDayForm(v => !v)} className="btn">
-            <Plus size={14} /> عامل باليومية
+            <Plus size={14} /> {t("عامل باليومية")}
           </button>
-          <button onClick={add} className="btn btn-primary"><Plus size={14} /> مقاول جديد</button>
+          <button onClick={add} className="btn btn-primary"><Plus size={14} /> {t("مقاول جديد")}</button>
         </div>
       </div>
 
       {known.length === 0 && (
         <div className="mb-3 text-[11px]" style={{ color: MUTED }}>
-          دفتر المقاولين فارغ — سجّل مقاوليك مرة واحدة من قسم «المقاولون» باسمهم وهاتفهم،
-          ثم اخترهم هنا في كل مشروع.
+          {t("دفتر المقاولين فارغ — سجّل مقاوليك مرة واحدة من قسم «المقاولون» باسمهم وهاتفهم، ثم اخترهم هنا في كل مشروع.")}
         </div>
       )}
 
@@ -2323,7 +2343,7 @@ export function ContractorLedger({ client, book, onChange }) {
 
       {led.rows.length === 0 ? (
         <div className="py-3 text-center text-xs text-muted">
-          لا يوجد مقاولون. أضف المقاول بقيمة تعاقده، ثم اربط مصروفاته به ليُحسب المتبقي والمحتجز تلقائيًا.
+          {t("لا يوجد مقاولون. أضف المقاول بقيمة تعاقده، ثم اربط مصروفاته به ليُحسب المتبقي والمحتجز تلقائيًا. ولتسجيل خصم عليه — تأخير أو عيب تنفيذ — سجّله مصروفًا ثم اضغط «اجعله خصمًا».")}
         </div>
       ) : (
         <>
@@ -2343,17 +2363,17 @@ export function ContractorLedger({ client, book, onChange }) {
             {led.rows.map(k => (
               <div key={k.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${k.overCertified ? "#A8322B" : BORDER}` }}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input className="inp" style={{ width: 130, marginBottom: 0 }} placeholder="اسم المقاول"
+                  <input className="inp" style={{ width: 130, marginBottom: 0 }} placeholder={t("اسم المقاول")}
                     value={k.name} onChange={e => patch(k.id, { name: e.target.value })} />
-                  <input className="inp" style={{ width: 100, marginBottom: 0 }} placeholder="الصنعة"
+                  <input className="inp" style={{ width: 100, marginBottom: 0 }} placeholder={t("الصنعة")}
                     value={k.trade} onChange={e => patch(k.id, { trade: e.target.value })} />
                   <select className="inp" style={{ width: 140, marginBottom: 0 }} value={k.phase || ""}
                     onChange={e => patch(k.id, { phase: e.target.value })}>
-                    <option value="">— المرحلة —</option>
-                    {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+                    <option value="">{t("— المرحلة —")}</option>
+                    {PHASES.map(p => <option key={p} value={p}>{t(PHASE_SHORT[p])}</option>)}
                   </select>
                   <input className="inp num" style={{ width: 110, marginBottom: 0 }} type="number" inputMode="decimal"
-                    placeholder="قيمة التعاقد" value={k.contractValue || ""}
+                    placeholder={t("قيمة التعاقد")} value={k.contractValue || ""}
                     onChange={e => patch(k.id, { contractValue: Number(e.target.value) || 0 })} />
                   <span className="code">{k.id}</span>
                   <button onClick={() => remove(k.id)} className="text-xs" style={{ color: "#A8322B" }}>✕</button>
@@ -2364,17 +2384,17 @@ export function ContractorLedger({ client, book, onChange }) {
                                 backgroundColor: k.overCertified ? "#A8322B" : "#4A6152" }} />
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 text-[10px]">
-                  <span className="text-muted">مستخلصات <b className="num">{k.payments}</b></span>
-                  <span className="text-muted">مصروف <b className="num">{fmt(k.paid)}</b></span>
-                  <span style={{ color: "#8A5A2B" }}>محتجز <b className="num">{fmt(k.retained)}</b></span>
-                  <span className="text-muted">معتمد <b className="num">{fmt(k.certified)}</b></span>
+                  <span className="text-muted">{t("مستخلصات")} <b className="num">{k.payments}</b></span>
+                  <span className="text-muted">{t("مصروف")} <b className="num">{fmt(k.paid)}</b></span>
+                  <span style={{ color: "#8A5A2B" }}>{t("محتجز")} <b className="num">{fmt(k.retained)}</b></span>
+                  <span className="text-muted">{t("معتمد")} <b className="num">{fmt(k.certified)}</b></span>
                   <span style={{ color: k.remaining < 0 ? "#A8322B" : "#4A6152" }}>
                     متبقٍ <b className="num">{fmt(k.remaining)}</b>
                   </span>
                 </div>
                 {k.overCertified && (
                   <div className="mt-1 text-[10px] font-bold" style={{ color: "#A8322B" }}>
-                    ⛔ المصروف تجاوز قيمة التعاقد بـ {fmt(-k.remaining)} ج.م — راجع قبل أي صرف آخر
+                    ⛔ المصروف تجاوز قيمة التعاقد بـ {fmt(-k.remaining)} {t("ج.م — راجع قبل أي صرف آخر")}
                   </div>
                 )}
               </div>
@@ -2385,8 +2405,8 @@ export function ContractorLedger({ client, book, onChange }) {
 
       {led.orphanTotal > 0 && (
         <div className="mt-3 rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
-          {fmt(led.orphanTotal)} ج.م مصروفات مقاولي باطن غير منسوبة لمقاول معيّن
-          ({led.orphanPayments.length} مصروف) — انسبها ليظهر متبقي كل مقاول بدقة.
+          {fmt(led.orphanTotal)} {t("ج.م مصروفات مقاولي باطن غير منسوبة لمقاول معيّن")}
+          ({led.orphanPayments.length} {t("مصروف) — انسبها ليظهر متبقي كل مقاول بدقة.")}
         </div>
       )}
     </div>
@@ -2463,24 +2483,22 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
   return (
     <div className="sheet p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="h-section">مصروفات الموقع مقابل المقايسة</span>
-        <button onClick={() => addExpense("")} className="btn btn-primary"><Plus size={14} /> مصروف</button>
+        <span className="h-section">{t("مصروفات الموقع مقابل المقايسة")}</span>
+        <button onClick={() => addExpense("")} className="btn btn-primary"><Plus size={14} /> {t("مصروف")}</button>
       </div>
       <div className="mb-3 text-[11px] leading-5 text-muted">
-        كل مصروف يُصنَّف بنفس فئات تحليل السعر — فيصبح السؤال قابلًا للإجابة:
-        هل التجاوز في الخامة أم في العمالة أم في المقاول؟ المصروف بلا بند (ونش، نقل، أمن)
-        يُعتبر غير مباشر ويُوزَّع على بنود مرحلته بالتناسب.
+        {t("كل مصروف يُصنَّف بنفس فئات تحليل السعر — فيصبح السؤال قابلًا للإجابة: هل التجاوز في الخامة أم في العمالة أم في المقاول؟ المصروف بلا بند (ونش، نقل، أمن) يُعتبر غير مباشر ويُوزَّع على بنود مرحلته بالتناسب.")}
       </div>
 
       {/* الإجمالي بالفئة: مخطط مقابل فعلي */}
       {(pva.plannedTotal > 0 || pva.spentTotal > 0) && (
         <div className="mb-3 rounded-lg p-3" style={{ border: `1px solid ${BORDER}` }}>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <span className="lbl">إجمالي المشروع بالفئة</span>
+            <span className="lbl">{t("إجمالي المشروع بالفئة")}</span>
             <span className="text-[11px]">
-              <span className="text-muted">مخطط </span>
+              <span className="text-muted">{t("مخطط")} </span>
               <b className="num">{fmt(pva.plannedTotal)}</b>
-              <span className="text-muted"> · فعلي </span>
+              <span className="text-muted"> {t("· فعلي")} </span>
               <b className="num" style={{ color: pva.diff < 0 ? "#A8322B" : "#4A6152" }}>{fmt(pva.spentTotal)}</b>
             </span>
           </div>
@@ -2508,12 +2526,12 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
           })}
           {pva.worstKind && (
             <div className="mt-2 text-[10px] font-bold" style={{ color: "#A8322B" }}>
-              أكبر تجاوز في {KIND_LABEL[pva.worstKind.kind]}: {fmt(pva.worstKind.spent - pva.worstKind.planned)} ج.م فوق المخطط
+              أكبر تجاوز في {KIND_LABEL[pva.worstKind.kind]}: {fmt(pva.worstKind.spent - pva.worstKind.planned)} {t("ج.م فوق المخطط")}
             </div>
           )}
           {pva.coverage < 1 && (
             <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
-              التحليل يغطي {(pva.coverage * 100).toFixed(0)}% من المشروع — المقارنة تخصّ المحلَّل وحده.
+              التحليل يغطي {(pva.coverage * 100).toFixed(0)}{t("% من المشروع — المقارنة تخصّ المحلَّل وحده.")}
             </div>
           )}
         </div>
@@ -2528,9 +2546,9 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
             <div key={l.phase} className="rounded-lg p-2.5" style={{ border: `1px solid ${BORDER}`, opacity: l.empty ? 0.5 : 1 }}>
               <button onClick={() => setOpenPhase(isOpen ? null : l.phase)}
                       className="flex w-full flex-wrap items-center justify-between gap-2 text-right">
-                <span className="text-xs font-bold" style={{ color: PHASE_COLORS[l.phase] || NAVY }}>{l.phase}</span>
+                <span className="text-xs font-bold" style={{ color: PHASE_COLORS[l.phase] || NAVY }}>{t(l.phase)}</span>
                 <span className="num text-xs font-bold" style={{ color: l.overrun ? "#A8322B" : "#4A6152" }}>
-                  {fmt(l.spent)} / {fmt(l.planned)} ج.م
+                  {fmt(l.spent)} / {fmt(l.planned)} {t("ج.م")}
                 </span>
               </button>
               <div className="mt-1 h-1.5 w-full" style={{ backgroundColor: "#E4DFD7" }}>
@@ -2538,12 +2556,12 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
               </div>
               {l.overrun && (
                 <div className="mt-1 text-[10px] font-bold" style={{ color: "#A8322B" }}>
-                  تجاوز {fmt(-l.diff)} ج.م فوق قيمة بنود المقايسة
+                  تجاوز {fmt(-l.diff)} {t("ج.م فوق قيمة بنود المقايسة")}
                 </div>
               )}
               {ph && ph.indirect > 0 && (
                 <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
-                  منها {fmt(ph.indirect)} ج.م مصروفات غير مباشرة (معدات ونقل وخلافه) تُوزَّع على بنود المرحلة
+                  منها {fmt(ph.indirect)} {t("ج.م مصروفات غير مباشرة (معدات ونقل وخلافه) تُوزَّع على بنود المرحلة")}
                 </div>
               )}
 
@@ -2551,16 +2569,16 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                 <div className="mt-2 border-t pt-2" style={{ borderColor: BORDER }}>
                   {!ph.comparable ? (
                     <div className="text-[10px]" style={{ color: "#7A5E22" }}>
-                      لا يوجد تحليل سعر لبنود هذه المرحلة — المقارنة بالفئة بلا معنى حتى تُحلَّل من دفتر الأسعار.
+                      {t("لا يوجد تحليل سعر لبنود هذه المرحلة — المقارنة بالفئة بلا معنى حتى تُحلَّل من دفتر الأسعار.")}
                     </div>
                   ) : ph.kinds.filter(k => !k.silent).map(k => (
                     <div key={k.kind} className="flex items-baseline justify-between border-b py-1 last:border-0 text-[10px]"
                          style={{ borderColor: "var(--color-line)" }}>
                       <span style={{ color: KIND_COLOR[k.kind] }}>{KIND_LABEL[k.kind]}</span>
                       <span className="num">
-                        <span className="text-muted">مخطط {fmt(k.planned)}</span>
+                        <span className="text-muted">{t("مخطط")} {fmt(k.planned)}</span>
                         {" · "}
-                        <b style={{ color: k.overrun ? "#A8322B" : "#4A6152" }}>فعلي {fmt(k.spent)}</b>
+                        <b style={{ color: k.overrun ? "#A8322B" : "#4A6152" }}>{t("فعلي")} {fmt(k.spent)}</b>
                         {k.overrun && <span style={{ color: "#A8322B" }}> (+{fmt(-k.diff)})</span>}
                       </span>
                     </div>
@@ -2574,7 +2592,7 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
 
       {(client.expenses || []).length > 0 && (
         <div className="mt-3 border-t pt-3" style={{ borderColor: BORDER }}>
-          <div className="lbl mb-2">سجل مصروفات الموقع</div>
+          <div className="lbl mb-2">{t("سجل مصروفات الموقع")}</div>
           <div className="flex flex-col gap-2">
             {(client.expenses || []).map(e => (
               <div key={e.id} className="rounded-lg p-2" style={{ backgroundColor: LIGHT }}>
@@ -2584,14 +2602,14 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                   <select className="inp" style={{ width: 140, marginBottom: 0 }}
                     value={COST_KINDS.includes(e.kind) ? e.kind : "other"}
                     onChange={ev => patchExpense(e.id, { kind: ev.target.value })}>
-                    {COST_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                    {COST_KINDS.map(k => <option key={k} value={k}>{t(KIND_LABEL[k])}</option>)}
                   </select>
                   <select className="inp" style={{ width: 140, marginBottom: 0 }} value={e.phase || ""}
                     onChange={ev => patchExpense(e.id, { phase: ev.target.value })}>
-                    <option value="">— بلا مرحلة —</option>
-                    {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+                    <option value="">{t("— بلا مرحلة —")}</option>
+                    {PHASES.map(p => <option key={p} value={p}>{t(PHASE_SHORT[p])}</option>)}
                   </select>
-                  <input className="inp num" style={{ width: 100, marginBottom: 0 }} type="number" inputMode="decimal" placeholder="المبلغ"
+                  <input className="inp num" style={{ width: 100, marginBottom: 0 }} type="number" inputMode="decimal" placeholder={t("المبلغ")}
                     value={e.amount || ""} onChange={ev => patchExpense(e.id, { amount: Number(ev.target.value) || 0 })} />
                   <input className="inp flex-1" style={{ minWidth: 110, marginBottom: 0 }} placeholder={t("المورد / البيان")}
                     value={e.vendor || ""} onChange={ev => patchExpense(e.id, { vendor: ev.target.value })} />
@@ -2602,7 +2620,7 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <select className="inp" style={{ width: 160, marginBottom: 0 }} value={e.itemId || ""}
                     onChange={ev => patchExpense(e.id, { itemId: ev.target.value })}>
-                    <option value="">— غير مباشر (يُوزَّع) —</option>
+                    <option value="">{t("— غير مباشر (يُوزَّع) —")}</option>
                     {analysis.lines.filter(l => !e.phase || l.phase === e.phase)
                       .map(l => <option key={l.id} value={l.id}>{l.name.slice(0, 30)}</option>)}
                   </select>
@@ -2612,12 +2630,30 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
                     <>
                       <select className="inp" style={{ width: 150, marginBottom: 0 }} value={e.contractorId || ""}
                         onChange={ev => patchExpense(e.id, { contractorId: ev.target.value })}>
-                        <option value="">— المقاول —</option>
+                        <option value="">{t("— المقاول —")}</option>
                         {contractors.map(k => <option key={k.id} value={k.id}>{k.name || k.id}</option>)}
                       </select>
                       <input className="inp num" style={{ width: 120, marginBottom: 0 }} type="number" inputMode="decimal"
-                        placeholder="محتجز ضمان" value={e.retained || ""}
+                        placeholder={t("محتجز ضمان")} value={e.retained || ""}
                         onChange={ev => patchExpense(e.id, { retained: Number(ev.target.value) || 0 })} />
+                      {/*  الخصم ليس نوعًا ثالثًا من الحركات، بل مستخلص بالسالب:
+                          يُنقص ما صُرف له فيرتفع المتبقي بنفس القدر. كان يعمل
+                          حسابيًا ولا تقوله الشاشة — فمن أراد خصمًا لم يعرف من
+                          أين. الآن زرّ يقلب الإشارة، والسطر يُعلن نفسه خصمًا.  */}
+                      <button type="button"
+                        onClick={() => patchExpense(e.id, { amount: -Math.abs(Number(e.amount) || 0) })}
+                        disabled={Number(e.amount) <= 0}
+                        title={t("يقلب المبلغ إلى سالب فيُسجَّل خصمًا على المقاول")}
+                        style={{ border: `1px solid ${BORDER}`, background: "transparent", padding: "3px 10px",
+                                 fontSize: 11, cursor: Number(e.amount) > 0 ? "pointer" : "default",
+                                 opacity: Number(e.amount) > 0 ? 1 : 0.35, fontFamily: "inherit" }}>
+                        {t("اجعله خصمًا")}
+                      </button>
+                      {Number(e.amount) < 0 && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#A8322B" }}>
+                          {t("خصم على المقاول — يُنقص المصروف ويرفع المتبقي له")}
+                        </span>
+                      )}
                     </>
                   )}
                 </div>
@@ -2625,12 +2661,12 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
             ))}
           </div>
           <div className="mt-2 flex justify-between text-xs font-bold">
-            <span className="text-muted">إجمالي المصروف</span>
-            <span className="num" style={{ color: bud.remaining < 0 ? "#A8322B" : TEXT }}>{fmt(bud.spent)} ج.م</span>
+            <span className="text-muted">{t("إجمالي المصروف")}</span>
+            <span className="num" style={{ color: bud.remaining < 0 ? "#A8322B" : TEXT }}>{fmt(bud.spent)} {t("ج.م")}</span>
           </div>
           {pva.unassigned > 0 && (
             <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
-              منها {fmt(pva.unassigned)} ج.م بلا مرحلة — لا تدخل مقارنة أي مرحلة حتى تُنسب.
+              منها {fmt(pva.unassigned)} {t("ج.م بلا مرحلة — لا تدخل مقارنة أي مرحلة حتى تُنسب.")}
             </div>
           )}
         </div>
@@ -2682,7 +2718,7 @@ function NewContractorForm({ clients, onSave, onCancel, fixedName = "" }) {
         <label className="block">
           <span className="eyebrow">{t("المشروع")}</span>
           <select className="inp" value={clientId} onChange={e => setClientId(e.target.value)}>
-            {clients.length === 0 && <option value="">— لا يوجد مشاريع —</option>}
+            {clients.length === 0 && <option value="">{t("— لا يوجد مشاريع —")}</option>}
             {clients.map(c => <option key={c.id} value={c.id}>{c.name || t("بدون اسم")}</option>)}
           </select>
         </label>
@@ -2690,19 +2726,19 @@ function NewContractorForm({ clients, onSave, onCancel, fixedName = "" }) {
         <label className="block">
           <span className="eyebrow">{t("اسم المقاول")}</span>
           <input className="inp" value={name} onChange={e => setName(e.target.value)}
-                 placeholder="مثال: حسن السيد" disabled={!!fixedName} />
+                 placeholder={t("مثال: حسن السيد")} disabled={!!fixedName} />
         </label>
 
         <label className="block">
           <span className="eyebrow">{t("الصنعة")}</span>
           <input className="inp" value={trade} onChange={e => setTrade(e.target.value)}
-                 placeholder="محارة · كهرباء · نجارة" />
+                 placeholder={t("محارة · كهرباء · نجارة")} />
         </label>
 
         <label className="block">
           <span className="eyebrow">{t("المرحلة")}</span>
           <select className="inp" value={phase} onChange={e => setPhase(e.target.value)}>
-            <option value="">— بلا مرحلة —</option>
+            <option value="">{t("— بلا مرحلة —")}</option>
             {PHASES.map(p => <option key={p} value={p}>{t(p)}</option>)}
           </select>
         </label>
@@ -2725,7 +2761,7 @@ function NewContractorForm({ clients, onSave, onCancel, fixedName = "" }) {
         <button className="btn" onClick={onCancel}>{t("إلغاء")}</button>
         {!canSave && (
           <span style={{ fontSize: 11, color: MUTED }}>
-            اختر المشروع واكتب اسم المقاول
+            {t("اختر المشروع واكتب اسم المقاول")}
           </span>
         )}
       </div>
@@ -2749,7 +2785,7 @@ function Stars({ value = 0, onChange, size = 15 }) {
                   color: n <= v ? COPPER : "#D9D6D0", fontSize: size,
                 }}>★</button>
       ))}
-      {v === 0 && <span style={{ fontSize: 10, color: MUTED, marginInlineStart: 6 }}>لم يُقيَّم</span>}
+      {v === 0 && <span style={{ fontSize: 10, color: MUTED, marginInlineStart: 6 }}>{t("لم يُقيَّم")}</span>}
     </span>
   );
 }
@@ -2773,7 +2809,7 @@ function ContractorRecordForm({ initial, onSave, onCancel, onDelete }) {
         <label className="block">
           <span className="eyebrow">{t("اسم المقاول")}</span>
           <input className="inp" value={name} onChange={e => setName(e.target.value)}
-                 placeholder="مثال: حسن السيد" disabled={!!initial} />
+                 placeholder={t("مثال: حسن السيد")} disabled={!!initial} />
         </label>
         <label className="block">
           <span className="eyebrow">{t("رقم الهاتف")}</span>
@@ -2794,7 +2830,7 @@ function ContractorRecordForm({ initial, onSave, onCancel, onDelete }) {
                         border: `1px solid ${on ? INK : BORDER}`,
                         backgroundColor: on ? INK : "transparent",
                         color: on ? "#FFFFFF" : MUTED, cursor: "pointer",
-                      }}>{tr}</button>
+                      }}>{t(tr)}</button>
             );
           })}
         </div>
@@ -2808,7 +2844,7 @@ function ContractorRecordForm({ initial, onSave, onCancel, onDelete }) {
       <label className="block" style={{ marginTop: 10 }}>
         <span className="eyebrow">{t("ملاحظات")}</span>
         <input className="inp" value={notes} onChange={e => setNotes(e.target.value)}
-               placeholder="التزامه بالمواعيد · جودة التشطيب · طريقة الحساب" />
+               placeholder={t("التزامه بالمواعيد · جودة التشطيب · طريقة الحساب")} />
       </label>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -2851,7 +2887,7 @@ export function ContractorsRegistry({
 
   if (!maySeeCost) {
     return <div className="py-16 text-center text-sm" style={{ color: MUTED, borderTop: `1px solid ${BORDER}` }}>
-      دفتر المقاولين متاح لمالك المكتب أو مدير المشاريع فقط.
+      {t("دفتر المقاولين متاح لمالك المكتب أو مدير المشاريع فقط.")}
     </div>;
   }
 
@@ -2864,29 +2900,29 @@ export function ContractorsRegistry({
     <div>
       <SectionHead eyebrow={`${rows.length}`}
                    title={t("المقاولون")}
-                   subtitle="دفتر المكتب — هاتف وصنعة وتقييم وحساب جارٍ في كل مشروع">
+                   subtitle={t("دفتر المكتب — هاتف وصنعة وتقييم وحساب جارٍ في كل مشروع")}>
         <button className="btn btn-primary" onClick={() => { setAdding(v => !v); setEditKey(null); }}>
           <Plus size={15} /> {adding ? t("إلغاء") : t("مقاول جديد")}
         </button>
       </SectionHead>
 
       <div className="mb-8 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="عدد المقاولين" value={totals.contractors} />
-        <StatCard label="قيمة التعاقدات" value={fmt(totals.contracted)} sub={currency()} />
-        <StatCard label="المصروف" value={fmt(totals.paid)} sub={currency()} />
-        <StatCard label="محتجز الضمان" value={fmt(totals.retained)} sub={currency()} accent={COPPER} />
-        <StatCard label="المتبقي لهم" value={fmt(totals.remaining)} sub={currency()} accent={SAGE} />
+        <StatCard label={t("عدد المقاولين")} value={totals.contractors} />
+        <StatCard label={t("قيمة التعاقدات")} value={fmt(totals.contracted)} sub={currency()} />
+        <StatCard label={t("المصروف")} value={fmt(totals.paid)} sub={currency()} />
+        <StatCard label={t("محتجز الضمان")} value={fmt(totals.retained)} sub={currency()} accent={COPPER} />
+        <StatCard label={t("المتبقي لهم")} value={fmt(totals.remaining)} sub={currency()} accent={SAGE} />
       </div>
 
       {adding && <ContractorRecordForm onSave={saveRecord} onCancel={() => setAdding(false)} />}
 
-      <input className="inp mb-6" placeholder="بحث بالاسم أو الهاتف أو الصنعة أو المشروع…"
+      <input className="inp mb-6" placeholder={t("بحث بالاسم أو الهاتف أو الصنعة أو المشروع…")}
              value={q} onChange={e => setQ(e.target.value)} />
 
       {visible.length === 0 && (
         <div className="py-16 text-center text-sm" style={{ color: MUTED, borderTop: `1px solid ${BORDER}` }}>
           {rows.length === 0
-            ? "لا يوجد مقاولون بعد — اضغط «مقاول جديد» أو أسند مقاولًا داخل مشروع."
+            ? t("لا يوجد مقاولون بعد — اضغط «مقاول جديد» أو أسند مقاولًا داخل مشروع.")
             : "لا نتائج مطابقة لهذا البحث."}
         </div>
       )}
@@ -2904,7 +2940,7 @@ export function ContractorsRegistry({
                     upsertContractor(book, { key: r.key, name: r.name, phone: r.phone, trades: r.trades }),
                     r.key, n))} />
                   {!r.inBook && (
-                    <span className="eyebrow" style={{ color: COPPER }}>غير مسجّل في الدفتر</span>
+                    <span className="eyebrow" style={{ color: COPPER }}>{t("غير مسجّل في الدفتر")}</span>
                   )}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -2913,9 +2949,9 @@ export function ContractorsRegistry({
                          style={{ fontSize: 13, color: INK, textDecoration: "none", borderBottom: `1px solid ${BORDER}` }}>
                         {r.phone}
                       </a>
-                    : <span className="eyebrow">بلا رقم هاتف</span>}
+                    : <span className="eyebrow">{t("بلا رقم هاتف")}</span>}
                   {r.trades.length > 0 && (
-                    <span style={{ fontSize: 11.5, color: MUTED }}>{r.trades.join(" · ")}</span>
+                    <span style={{ fontSize: 11.5, color: MUTED }}>{r.trades.map(x => t(x)).join(" · ")}</span>
                   )}
                 </div>
               </div>
@@ -2976,7 +3012,7 @@ export function ContractorsRegistry({
             {open && (
               <div className="mt-4">
                 {r.projects.length === 0
-                  ? <div className="text-[12px]" style={{ color: MUTED }}>لم يُسند إليه عمل بعد.</div>
+                  ? <div className="text-[12px]" style={{ color: MUTED }}>{t("لم يُسند إليه عمل بعد.")}</div>
                   : (
                     <table className="editorial">
                       <thead><tr>
@@ -2997,7 +3033,7 @@ export function ContractorsRegistry({
                                 {p.clientName}
                               </button>
                             </td>
-                            <td style={{ color: MUTED, fontSize: 11.5 }}>{p.phase ? (PHASE_SHORT[p.phase] || p.phase) : "—"}</td>
+                            <td style={{ color: MUTED, fontSize: 11.5 }}>{p.phase ? t(PHASE_SHORT[p.phase] || p.phase) : "—"}</td>
                             <td className="num" style={{ textAlign: "end" }}>{fmt(p.contractValue)}</td>
                             <td className="num" style={{ textAlign: "end" }}>{fmt(p.paid)}</td>
                             <td className="num" style={{ textAlign: "end", color: COPPER }}>{fmt(p.retained)}</td>
@@ -3049,13 +3085,13 @@ function FinancePanel({ client, settings, priceBook, contractorBook, currentMemb
 
       {/* قيمة العقد */}
       <div className="sheet p-4">
-        <div className="mb-3 h-section">قيمة العقد</div>
-        <SummaryRow label={`الأصل — متعاقد ${client.contract.signedAt}`} value={cv.base} />
-        <SummaryRow label="أوامر تغيير معتمدة" value={cv.variations} />
-        <SummaryRow label="القيمة الحالية" value={cv.total} bold />
+        <div className="mb-3 h-section">{t("قيمة العقد")}</div>
+        <SummaryRow label={`${t("الأصل — متعاقد")} ${client.contract.signedAt}`} value={cv.base} />
+        <SummaryRow label={t("أوامر تغيير معتمدة")} value={cv.variations} />
+        <SummaryRow label={t("القيمة الحالية")} value={cv.total} bold />
         {cv.pendingCount > 0 && (
           <div className="mt-2 text-xs" style={{ color: "#8A5A2B" }}>
-            {cv.pendingCount} أمر تغيير بانتظار موافقة العميل بقيمة {fmt(cv.pendingValue)} ج.م — غير محتسبة أعلاه
+            {cv.pendingCount} {t("أمر تغيير بانتظار موافقة العميل بقيمة")} {fmt(cv.pendingValue)} {t("ج.م — غير محتسبة أعلاه")}
           </div>
         )}
       </div>
@@ -3063,27 +3099,27 @@ function FinancePanel({ client, settings, priceBook, contractorBook, currentMemb
       {/* أوامر التغيير */}
       <div className="sheet p-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="h-section">أوامر التغيير</span>
-          <button onClick={addVariation} className="btn btn-gold"><Plus size={14} /> أمر جديد</button>
+          <span className="h-section">{t("أوامر التغيير")}</span>
+          <button onClick={addVariation} className="btn btn-gold"><Plus size={14} /> {t("أمر جديد")}</button>
         </div>
         {(client.variations || []).length === 0 ? (
           <div className="py-4 text-center text-xs text-muted">
-            لا توجد أوامر تغيير. سجّل هنا أي طلب من العميل بعد التعاقد ليُوثَّق بقيمته وتاريخه.
+            {t("لا توجد أوامر تغيير. سجّل هنا أي طلب من العميل بعد التعاقد ليُوثَّق بقيمته وتاريخه.")}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {(client.variations || []).map(v => (
               <div key={v.id} className="flex flex-wrap items-center gap-2 border-b pb-2" style={{ borderColor: "var(--color-line)" }}>
-                <input className="inp flex-1" style={{ minWidth: 140 }} placeholder="وصف التغيير"
+                <input className="inp flex-1" style={{ minWidth: 140 }} placeholder={t("وصف التغيير")}
                   value={v.title || ""} onChange={e => patchVariation(v.id, { title: e.target.value })} />
-                <input className="inp num" style={{ width: 110 }} type="number" inputMode="decimal" placeholder="القيمة"
+                <input className="inp num" style={{ width: 110 }} type="number" inputMode="decimal" placeholder={t("القيمة")}
                   value={v.lines?.[0]?.price ?? ""} disabled={!maySeeCost}
                   onChange={e => patchVariation(v.id, { lines: [{ name: v.title || "تغيير", qty: 1, price: Number(e.target.value) || 0 }] })} />
                 <select className="inp" style={{ width: 150 }} value={v.status}
                   onChange={e => patchVariation(v.id, { status: e.target.value })}>
-                  {Object.entries(VARIATION_STATUS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  {Object.entries(VARIATION_STATUS).map(([k, label]) => <option key={k} value={k}>{t(label)}</option>)}
                 </select>
-                <span className="num text-xs font-bold text-navy" style={{ width: 90 }}>{fmt(variationTotal(v))} ج.م</span>
+                <span className="num text-xs font-bold text-navy" style={{ width: 90 }}>{fmt(variationTotal(v))} {t("ج.م")}</span>
               </div>
             ))}
           </div>
@@ -3093,17 +3129,17 @@ function FinancePanel({ client, settings, priceBook, contractorBook, currentMemb
       {/* سجل الدفعات — كل دفعة منسوبة لمرحلة ونوع، وإلا لم تُحتسب في جدول التحصيل */}
       <div className="sheet p-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="h-section">سجل الدفعات</span>
-          <button onClick={addReceipt} className="btn btn-primary"><Plus size={14} /> دفعة</button>
+          <span className="h-section">{t("سجل الدفعات")}</span>
+          <button onClick={addReceipt} className="btn btn-primary"><Plus size={14} /> {t("دفعة")}</button>
         </div>
         {(client.receipts || []).length === 0 ? (
           <div className="py-4 text-center text-xs text-muted">
-            لا توجد دفعات مسجّلة. سجّلها من جدول التحصيل أعلاه ليُنسب كل مبلغ لمرحلته تلقائيًا.
+            {t("لا توجد دفعات مسجّلة. سجّلها من جدول التحصيل أعلاه ليُنسب كل مبلغ لمرحلته تلقائيًا.")}
           </div>
         ) : (
           <>
             <div className="mb-2 text-[11px] text-muted">
-              دفعة بلا مرحلة تُحسب في الإجمالي لكنها لا تفتح البدء في أي مرحلة — انسبها هنا.
+              {t("دفعة بلا مرحلة تُحسب في الإجمالي لكنها لا تفتح البدء في أي مرحلة — انسبها هنا.")}
             </div>
             <div className="flex flex-col gap-2">
               {(client.receipts || []).map(r => (
@@ -3113,18 +3149,18 @@ function FinancePanel({ client, settings, priceBook, contractorBook, currentMemb
                   <select className="inp" style={{ width: 150 }}
                     value={r.phase || ""}
                     onChange={e => patchReceipt(r.id, { phase: e.target.value })}>
-                    <option value="">— بلا مرحلة —</option>
-                    {PHASES.map(p => <option key={p} value={p}>{PHASE_SHORT[p]}</option>)}
+                    <option value="">{t("— بلا مرحلة —")}</option>
+                    {PHASES.map(p => <option key={p} value={p}>{t(PHASE_SHORT[p])}</option>)}
                   </select>
                   <select className="inp" style={{ width: 110 }}
                     value={r.kind === "profit" ? "profit" : "base"}
                     onChange={e => patchReceipt(r.id, { kind: e.target.value })}>
-                    <option value="base">قيمة المرحلة</option>
-                    <option value="profit">نسبة الربح</option>
+                    <option value="base">{t("قيمة المرحلة")}</option>
+                    <option value="profit">{t("نسبة الربح")}</option>
                   </select>
-                  <input className="inp num" style={{ width: 110 }} type="number" inputMode="decimal" placeholder="المبلغ"
+                  <input className="inp num" style={{ width: 110 }} type="number" inputMode="decimal" placeholder={t("المبلغ")}
                     value={r.amount || ""} onChange={e => patchReceipt(r.id, { amount: Number(e.target.value) || 0 })} />
-                  <input className="inp flex-1" style={{ minWidth: 110 }} placeholder="ملاحظة"
+                  <input className="inp flex-1" style={{ minWidth: 110 }} placeholder={t("ملاحظة")}
                     value={r.note || ""} onChange={e => patchReceipt(r.id, { note: e.target.value })} />
                   <button onClick={() => onChange({ receipts: (client.receipts || []).filter(x => x.id !== r.id) })}
                           className="text-xs" style={{ color: "#A8322B" }}>✕</button>
@@ -3183,15 +3219,15 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
         <div className="mb-7 flex flex-wrap items-center justify-between gap-3 py-4"
              style={{ borderTop: `1px solid ${INK}`, borderBottom: `1px solid ${BORDER}` }}>
           <div>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>العقد جاهز للتحميل بجدول دفعات محسوب فعليًا</div>
+            <div style={{ fontSize: 13.5, fontWeight: 500 }}>{t("العقد جاهز للتحميل بجدول دفعات محسوب فعليًا")}</div>
             <div className="num" style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
-              {fmt(calc.grandTotal)} {currency()} — ملف Word قابل للتعديل
+              {fmt(calc.grandTotal)} {currency()} {t("— ملف Word قابل للتعديل")}
             </div>
           </div>
           <button
             onClick={() => generateContractDocx(client, calc, settings).then(d => downloadDocx(`عقد_${client.name || "عميل"}.docx`, d))}
             className="btn btn-primary">
-            <FileText size={15} /> تحميل العقد
+            <FileText size={15} /> {t("تحميل العقد")}
           </button>
         </div>
       )}
@@ -3201,17 +3237,17 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
         <div className="lg:col-span-1">
           <div className="sheet p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-bold text-navy">بيانات العميل</div>
+              <div className="text-sm font-bold text-navy">{t("بيانات العميل")}</div>
               <div className="flex items-center gap-2">
                 {saving && <Loader2 className="animate-spin text-muted" size={14} />}
                 <button onClick={onDelete} className="text-gray-300 hover:text-red-500"><Trash2 size={16} /></button>
               </div>
             </div>
-            <Field label="اسم العميل"><input className="inp" value={client.name} onChange={e => onChange({ name: e.target.value })} /></Field>
-            <Field label="رقم الهاتف"><input className="inp" value={client.phone} onChange={e => onChange({ phone: e.target.value })} /></Field>
-            <Field label="عنوان المشروع"><input className="inp" value={client.address} onChange={e => onChange({ address: e.target.value })} /></Field>
-            <Field label="المساحة (م²)"><input type="number" inputMode="decimal" className="inp" value={client.area} onChange={e => onChange({ area: e.target.value })} /></Field>
-            <Field label="مرحلة العميل">
+            <Field label={t("اسم العميل")}><input className="inp" value={client.name} onChange={e => onChange({ name: e.target.value })} /></Field>
+            <Field label={t("رقم الهاتف")}><input className="inp" value={client.phone} onChange={e => onChange({ phone: e.target.value })} /></Field>
+            <Field label={t("عنوان المشروع")}><input className="inp" value={client.address} onChange={e => onChange({ address: e.target.value })} /></Field>
+            <Field label={t("المساحة (م²)")}><input type="number" inputMode="decimal" className="inp" value={client.area} onChange={e => onChange({ area: e.target.value })} /></Field>
+            <Field label={t("مرحلة العميل")}>
               <select
                 className="inp"
                 value={client.stage}
@@ -3226,10 +3262,10 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
                   }
                 }}
               >
-                {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                {STAGES.map(s => <option key={s} value={s}>{t(s)}</option>)}
               </select>
             </Field>
-            <Field label="المهندس المسؤول">
+            <Field label={t("المهندس المسؤول")}>
               <select
                 className="inp"
                 value={client.engineerId || ""}
@@ -3238,12 +3274,12 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
                   onChange({ engineerId: e.target.value, engineer: m ? m.name : "" });
                 }}
               >
-                <option value="">— غير محدد —</option>
-                {team.map(m => <option key={m.id} value={m.id}>{m.name}{m.role === "owner" ? " (المالك)" : ""}</option>)}
+                <option value="">{t("— غير محدد —")}</option>
+                {team.map(m => <option key={m.id} value={m.id}>{m.name}{m.role === "owner" ? ` (${t("المالك")})` : ""}</option>)}
               </select>
             </Field>
-            <Field label="الأسلوب المفضل"><input className="inp" value={client.style} onChange={e => onChange({ style: e.target.value })} /></Field>
-            <Field label="ملاحظات">
+            <Field label={t("الأسلوب المفضل")}><input className="inp" value={client.style} onChange={e => onChange({ style: e.target.value })} /></Field>
+            <Field label={t("ملاحظات")}>
               <textarea className="inp" rows={3} value={client.notes} onChange={e => onChange({ notes: e.target.value })} />
             </Field>
           </div>
@@ -3256,7 +3292,7 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
 
           <button className="btn mt-4 w-full"
                   onClick={() => window.open(`${doorUrls().base}?preview=client&id=${client.id}`, "_blank", "noopener")}>
-            معاينة بوابة العميل
+            {t("معاينة بوابة العميل")}
           </button>
 
           <button onClick={exportExcel} className="btn mt-5 w-full">
@@ -3267,7 +3303,7 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
           </button>
           <div className="mt-2 flex items-start gap-1.5 text-xs text-muted">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
-            كل الملفات هنا تُبنى لحظيًا من بيانات هذا العميل — أي تعديل بالمستويات أو الأسعار يظهر فورًا في أي ملف جديد تصدّره، بلا حاجة لتحديث يدوي.
+            {t("كل الملفات هنا تُبنى لحظيًا من بيانات هذا العميل — أي تعديل بالمستويات أو الأسعار يظهر فورًا في أي ملف جديد تصدّره، بلا حاجة لتحديث يدوي.")}
           </div>
         </div>
 
@@ -3280,14 +3316,14 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
               className="flex-1 rounded-md py-2 text-sm font-bold transition-colors"
               style={{ backgroundColor: innerTab === "pricing" ? NAVY : "transparent", color: innerTab === "pricing" ? "#FFFFFF" : TEXT }}
             >
-              التسعير والمقايسة
+              {t("التسعير والمقايسة")}
             </button>
             <button
               onClick={() => setInnerTab("site")}
               className="flex-1 rounded-md py-2 text-sm font-bold transition-colors"
               style={{ backgroundColor: innerTab === "site" ? NAVY : "transparent", color: innerTab === "site" ? "#FFFFFF" : TEXT }}
             >
-              سجل متابعة الموقع{client.progressPercent > 0 ? ` (${client.progressPercent}%)` : ""}
+              {t("سجل متابعة الموقع")}{client.progressPercent > 0 ? ` (${client.progressPercent}%)` : ""}
             </button>
             {client.contract && (
               <button
@@ -3295,7 +3331,7 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
                 className="flex-1 rounded-md py-2 text-sm font-bold transition-colors"
                 style={{ backgroundColor: innerTab === "finance" ? NAVY : "transparent", color: innerTab === "finance" ? "#FFFFFF" : TEXT }}
               >
-                المالية
+                {t("المالية")}
               </button>
             )}
           </div>
@@ -3314,7 +3350,7 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
           {innerTab === "pricing" && (
             <>
           <div className="sheet p-4">
-            <div className="mb-3 text-sm font-bold text-navy">مستوى التشطيب لكل نطاق عمل</div>
+            <div className="mb-3 text-sm font-bold text-navy">{t("مستوى التشطيب لكل نطاق عمل")}</div>
             <div className="flex flex-col gap-3">
               {SCOPES.map(scope => (
                 <div key={scope} className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3 bg-light">
@@ -3324,7 +3360,7 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
                       checked={client.scopeIncluded[scope]}
                       onChange={e => onChange({ scopeIncluded: { ...client.scopeIncluded, [scope]: e.target.checked } })}
                     />
-                    <span className="text-sm font-semibold">{scope}</span>
+                    <span className="text-sm font-semibold">{t(scope)}</span>
                   </div>
                   <div className="flex gap-1">
                     {LEVELS.map(lv => (
@@ -3339,12 +3375,12 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
                           border: `1px solid ${client.scopeLevel[scope] === lv ? LEVEL_COLORS[lv] : BORDER}`,
                         }}
                       >
-                        {lv}
+                        {t(lv)}
                       </button>
                     ))}
                   </div>
                   <div className="w-full text-left text-sm font-bold sm:w-auto text-navy">
-                    {client.scopeIncluded[scope] ? fmt(calc.byScope[scope]) + " ج.م" : "—"}
+                    {client.scopeIncluded[scope] ? `${fmt(calc.byScope[scope])} ${t("ج.م")}` : "—"}
                   </div>
                 </div>
               ))}
@@ -3359,18 +3395,18 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
           <FullItemBOQ client={client} onChange={onChange} currentMember={currentMember} />
 
           <div className="mt-4 rounded-xl p-4 bg-navy">
-            <div className="mb-3 text-sm font-bold text-white">ملخص السعر</div>
-            <SummaryRow label="إجمالي بنود التنفيذ" value={calc.execTotal} />
-            <SummaryRow label="أتعاب الإشراف الهندسي" value={calc.supervision} />
-            <SummaryRow label="احتياطي أعمال غير منظورة" value={calc.contingency} />
-            <SummaryRow label="التصميم" value={calc.byScope["تصميم"]} />
-            <SummaryRow label="الفرش والأثاث" value={calc.byScope["الفرش والأثاث"]} />
+            <div className="mb-3 text-sm font-bold text-white">{t("ملخص السعر")}</div>
+            <SummaryRow label={t("إجمالي بنود التنفيذ")} value={calc.execTotal} />
+            <SummaryRow label={t("أتعاب الإشراف الهندسي")} value={calc.supervision} />
+            <SummaryRow label={t("احتياطي أعمال غير منظورة")} value={calc.contingency} />
+            <SummaryRow label={t("التصميم")} value={calc.byScope["تصميم"]} />
+            <SummaryRow label={t("الفرش والأثاث")} value={calc.byScope["الفرش والأثاث"]} />
             <div className="my-2 h-px" style={{ backgroundColor: "#6B5B7B" }} />
-            <SummaryRow label="الإجمالي قبل الضريبة" value={calc.subtotal} bold />
-            <SummaryRow label="ضريبة القيمة المضافة" value={calc.vat} />
+            <SummaryRow label={t("الإجمالي قبل الضريبة")} value={calc.subtotal} bold />
+            <SummaryRow label={t("ضريبة القيمة المضافة")} value={calc.vat} />
             <div className="mt-3 flex items-center justify-between px-3 py-2.5 bg-gold" style={{ borderRadius: 2 }}>
-              <span className="text-sm font-bold" style={{ color: "#1C1B19" }}>الإجمالي النهائي المستحق</span>
-              <span className="num text-lg font-bold" style={{ color: "#1C1B19" }}>{fmt(calc.grandTotal)} ج.م</span>
+              <span className="text-sm font-bold" style={{ color: "#1C1B19" }}>{t("الإجمالي النهائي المستحق")}</span>
+              <span className="num text-lg font-bold" style={{ color: "#1C1B19" }}>{fmt(calc.grandTotal)} {t("ج.م")}</span>
             </div>
 
             {/* الهامش — الرقم الذي لم يكن النظام يعرفه إطلاقًا.
@@ -3378,9 +3414,9 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
             {can(currentMember, "viewCostBasis") && margin && (
               <div className="sheet mt-3 p-3">
                 <div className="mb-2 flex items-baseline justify-between">
-                  <span className="lbl">هامش الربح المتوقع</span>
+                  <span className="lbl">{t("هامش الربح المتوقع")}</span>
                   {margin.ratio == null ? (
-                    <span className="text-sm font-semibold text-muted">غير معروف</span>
+                    <span className="text-sm font-semibold text-muted">{t("غير معروف")}</span>
                   ) : (
                     <span
                       className="num text-lg font-semibold"
@@ -3393,16 +3429,16 @@ function ClientDetail({ client, settings, priceBook, contractorBook, allClients,
                 </div>
                 {margin.ratio != null && (
                   <div className="mb-2 flex justify-between text-xs text-muted">
-                    <span>تكلفة <b className="num">{fmt(margin.cost)}</b></span>
-                    <span>ربح <b className="num">{fmt(margin.profit)}</b></span>
+                    <span>{t("تكلفة")} <b className="num">{fmt(margin.cost)}</b></span>
+                    <span>{t("ربح")} <b className="num">{fmt(margin.profit)}</b></span>
                   </div>
                 )}
                 {/* الصدق هنا أهم من الرقم: نقول بوضوح كم من المشروع نعرف تكلفته */}
                 {!margin.complete && (
                   <div className="text-[10px]" style={{ color: "#7A5E22" }}>
                     {margin.coverage === 0
-                      ? `لا توجد تكاليف مُدخلة — ${margin.unknownItems.length} بندًا. أدخلها من دفتر الأسعار.`
-                      : `الهامش يخص ${(margin.coverage * 100).toFixed(0)}% من قيمة المشروع فقط — ${margin.unknownItems.length} بندًا بلا تكلفة.`}
+                      ? `${t("لا توجد تكاليف مُدخلة —")} ${margin.unknownItems.length} ${t("بندًا. أدخلها من دفتر الأسعار.")}`
+                      : `${t("الهامش يخص")} ${(margin.coverage * 100).toFixed(0)}${t("% من قيمة المشروع فقط —")} ${margin.unknownItems.length} ${t("بندًا بلا تكلفة.")}`}
                   </div>
                 )}
                 {margin.weakItems.length > 0 && (
@@ -3471,41 +3507,39 @@ function FullItemBOQ({ client, onChange, currentMember }) {
     <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-bold text-navy">المقايسة الكاملة القابلة للتعديل ({ITEMS.length} بند)</div>
+          <div className="text-sm font-bold text-navy">{t("المقايسة الكاملة القابلة للتعديل (")}{ITEMS.length} {t("بند)")}</div>
           {customCount > 0 && (
             <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
-              {customCount} تخصيص يدوي
+              {customCount} {t("تخصيص يدوي")}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {customCount > 0 && (
             <button onClick={resetAll} className="text-xs font-semibold underline" style={{ color: "#A8322B" }}>
-              إعادة الكل للوضع الافتراضي
+              {t("إعادة الكل للوضع الافتراضي")}
             </button>
           )}
           <button onClick={() => setExpanded(!expanded)} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white bg-navy">
-            {expanded ? "إخفاء" : "عرض وتعديل كل البنود"}
+            {expanded ? t("إخفاء") : t("عرض وتعديل كل البنود")}
           </button>
         </div>
       </div>
 
       {!expanded && (
         <p className="mt-2 text-xs leading-6 text-muted">
-          الجدول أعلاه بيتحكم في المستوى على مستوى الفئة كاملة. افتح هنا لو محتاج تغيّر مستوى أو كمية أو سعر
-          وحدة أو تضمين بند واحد بعينه بشكل مستقل — مفيد لتغيّرات سعر السوق أثناء التنفيذ أو اختلاف سعر
-          التوريد بين عميل وآخر. أي تعديل بيتزامن فورًا زي باقي البيانات.
+          {t("الجدول أعلاه بيتحكم في المستوى على مستوى الفئة كاملة. افتح هنا لو محتاج تغيّر مستوى أو كمية أو سعر وحدة أو تضمين بند واحد بعينه بشكل مستقل — مفيد لتغيّرات سعر السوق أثناء التنفيذ أو اختلاف سعر التوريد بين عميل وآخر. أي تعديل بيتزامن فورًا زي باقي البيانات.")}
         </p>
       )}
 
       {expanded && (
         <div className="mt-3 flex flex-col gap-0.5">
           <div className="hidden grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-bold sm:grid text-muted">
-            <div className="col-span-3">البند</div>
-            <div className="col-span-2">الكمية</div>
-            <div className="col-span-2">المستوى</div>
-            <div className="col-span-2">سعر الوحدة</div>
-            <div className="col-span-2">الإجمالي</div>
+            <div className="col-span-3">{t("البند")}</div>
+            <div className="col-span-2">{t("الكمية")}</div>
+            <div className="col-span-2">{t("المستوى")}</div>
+            <div className="col-span-2">{t("سعر الوحدة")}</div>
+            <div className="col-span-2">{t("الإجمالي")}</div>
             <div className="col-span-1"></div>
           </div>
           {ITEMS.map((item, i) => {
@@ -3518,7 +3552,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
             return (
               <React.Fragment key={name}>
                 {showScopeHeader && (
-                  <div className="mt-3 mb-1 text-xs font-bold text-muted">{scope}</div>
+                  <div className="mt-3 mb-1 text-xs font-bold text-muted">{t(scope)}</div>
                 )}
                 <div
                   className="grid grid-cols-12 items-center gap-2 px-2 py-2"
@@ -3554,8 +3588,8 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                       value={rec.level || ""}
                       onChange={e => patchItem(r.id, "level", e.target.value || undefined)}
                     >
-                      <option value="">افتراضي الفئة</option>
-                      {LEVELS.map(lv => <option key={lv} value={lv}>{lv}</option>)}
+                      <option value="">{t("افتراضي الفئة")}</option>
+                      {LEVELS.map(lv => <option key={lv} value={lv}>{t(lv)}</option>)}
                     </select>
                   </div>
                   <div className="col-span-6 sm:col-span-2">
@@ -3571,12 +3605,12 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                     />
                     {r.overrides.length > 0 && (
                       <span className="text-[9px] font-semibold" style={{ color: "#7A5E22" }}>
-                        تجاوز فردي: {r.overrides.join(" · ")} — يتخطى إعداد الفئة ({r.scopeLevel})
+                        تجاوز فردي: {r.overrides.join(" · ")} {t("— يتخطى إعداد الفئة (")}{r.scopeLevel})
                       </span>
                     )}
                     {r.hasPriceOverride && (
                       <span className="text-[9px] text-muted">
-                        كان {fmt(r.basePrice)} — عُدّل {r.priceDate}
+                        كان {fmt(r.basePrice)} {t("— عُدّل")} {r.priceDate}
                       </span>
                     )}
                   </div>
@@ -3585,7 +3619,7 @@ function FullItemBOQ({ client, onChange, currentMember }) {
                   </div>
                   <div className="col-span-4 text-left sm:col-span-1">
                     {isCustom && (
-                      <button onClick={() => resetItem(r.id)} title="إعادة الافتراضي" className="text-xs" style={{ color: "#A8322B" }}>↺</button>
+                      <button onClick={() => resetItem(r.id)} title={t("إعادة الافتراضي")} className="text-xs" style={{ color: "#A8322B" }}>↺</button>
                     )}
                   </div>
                 </div>
@@ -3644,7 +3678,7 @@ function VisitPhotos({ clientId, visit }) {
           <UploadCloud size={14} /> {busy ? "جاري الرفع…" : "إضافة صور"}
           <input type="file" accept="image/*" multiple className="hidden" onChange={onPick} disabled={busy} />
         </label>
-        {items.length > 0 && <span className="text-[10px] text-muted">{items.length} صورة</span>}
+        {items.length > 0 && <span className="text-[10px] text-muted">{items.length} {t("صورة")}</span>}
       </div>
       {err && <div className="mt-1 text-[10px]" style={{ color: "#A8322B" }}>{err}</div>}
       {items.length > 0 && (
@@ -3653,7 +3687,7 @@ function VisitPhotos({ clientId, visit }) {
             <div key={it.path} className="relative" style={{ width: 84, height: 84 }}>
               {urls[it.path] ? (
                 <a href={urls[it.path]} target="_blank" rel="noreferrer">
-                  <img src={urls[it.path]} alt="صورة موقع" style={{ width: 84, height: 84, objectFit: "cover", border: "1px solid var(--color-line)", borderRadius: 2 }} />
+                  <img src={urls[it.path]} alt={t("صورة موقع")} style={{ width: 84, height: 84, objectFit: "cover", border: "1px solid var(--color-line)", borderRadius: 2 }} />
                 </a>
               ) : (
                 <div className="bg-light" style={{ width: 84, height: 84, borderRadius: 2 }} />
@@ -3662,7 +3696,7 @@ function VisitPhotos({ clientId, visit }) {
                 onClick={() => remove(it.path)}
                 className="absolute text-white"
                 style={{ top: 2, left: 2, background: "rgba(0,0,0,.55)", borderRadius: 2, padding: "1px 3px" }}
-                aria-label="حذف الصورة"
+                aria-label={t("حذف الصورة")}
               >
                 <X size={11} />
               </button>
@@ -3719,7 +3753,7 @@ function SiteVisitLog({ client, onChange }) {
     <div className="mt-5 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-bold text-navy">سجل متابعة الموقع</div>
+          <div className="text-sm font-bold text-navy">{t("سجل متابعة الموقع")}</div>
           {client.progressPercent > 0 && (
             <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>
               نسبة الإنجاز الحالية: {client.progressPercent}%
@@ -3727,42 +3761,42 @@ function SiteVisitLog({ client, onChange }) {
           )}
         </div>
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white bg-navy">
-          <Plus size={14} /> تسجيل زيارة جديدة
+          <Plus size={14} /> {t("تسجيل زيارة جديدة")}
         </button>
       </div>
 
       {showForm && (
         <div className="mb-4 rounded-lg p-3 bg-light">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="تاريخ الزيارة">
+            <Field label={t("تاريخ الزيارة")}>
               <input type="date" className="inp" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} />
             </Field>
-            <Field label="اسم المهندس القائم بالزيارة">
+            <Field label={t("اسم المهندس القائم بالزيارة")}>
               <input className="inp" value={draft.engineer} onChange={e => setDraft({ ...draft, engineer: e.target.value })} />
             </Field>
             <Field label={`نسبة الإنجاز الإجمالية: ${draft.percent}%`}>
               <input type="range" min="0" max="100" step="5" className="w-full" value={draft.percent} onChange={e => setDraft({ ...draft, percent: Number(e.target.value) })} />
             </Field>
-            <Field label="مجلد صور خارجي (اختياري — الرفع المباشر متاح بعد الحفظ)">
-              <input className="inp" placeholder="رابط Google Drive أو مشابه" value={draft.photoLink} onChange={e => setDraft({ ...draft, photoLink: e.target.value })} />
+            <Field label={t("مجلد صور خارجي (اختياري — الرفع المباشر متاح بعد الحفظ)")}>
+              <input className="inp" placeholder={t("رابط Google Drive أو مشابه")} value={draft.photoLink} onChange={e => setDraft({ ...draft, photoLink: e.target.value })} />
             </Field>
           </div>
-          <Field label="ملاحظات الزيارة">
+          <Field label={t("ملاحظات الزيارة")}>
             <textarea className="inp" rows={3} value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} />
           </Field>
           <button onClick={submitVisit} disabled={!draft.date} className="rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: "#4A6152" }}>
-            حفظ الزيارة
+            {t("حفظ الزيارة")}
           </button>
         </div>
       )}
 
       {loadingVisits ? (
         <div className="flex items-center gap-2 py-6 text-sm text-muted">
-          <Loader2 className="animate-spin" size={16} /> جاري تحميل السجل…
+          <Loader2 className="animate-spin" size={16} /> {t("جاري تحميل السجل…")}
         </div>
       ) : visits.length === 0 ? (
         <div className="rounded-lg p-6 text-center text-sm" style={{ backgroundColor: LIGHT, color: MUTED }}>
-          لا يوجد زيارات مسجّلة بعد لهذا العميل.
+          {t("لا يوجد زيارات مسجّلة بعد لهذا العميل.")}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -3772,12 +3806,12 @@ function SiteVisitLog({ client, onChange }) {
                 <div className="flex items-center gap-2 text-sm font-bold">
                   <span>{v.date}</span>
                   <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white bg-navy">{v.percent}%</span>
-                  {v.engineer && <span className="text-xs font-normal text-muted">بواسطة {v.engineer}</span>}
+                  {v.engineer && <span className="text-xs font-normal text-muted">{t("بواسطة")} {v.engineer}</span>}
                 </div>
                 {v.notes && <div className="mt-1 text-xs leading-5 text-ink">{v.notes}</div>}
                 {v.photoLink && (
                   <a href={v.photoLink} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-navy">
-                    <ExternalLink size={12} /> مجلد خارجي
+                    <ExternalLink size={12} /> {t("مجلد خارجي")}
                   </a>
                 )}
                 <VisitPhotos clientId={client.id} visit={v} />
@@ -3804,7 +3838,7 @@ function SummaryRow({ label, value, bold }) {
   return (
     <div className="mb-1.5 flex items-center justify-between text-sm" style={{ color: "#F2EBE2" }}>
       <span style={{ fontWeight: bold ? 700 : 400, color: bold ? "#FFFFFF" : "#F2EBE2" }}>{label}</span>
-      <span style={{ fontWeight: bold ? 700 : 600, color: "#FFFFFF" }}>{fmt(value)} ج.م</span>
+      <span style={{ fontWeight: bold ? 700 : 600, color: "#FFFFFF" }}>{fmt(value)} {t("ج.م")}</span>
     </div>
   );
 }
@@ -3825,20 +3859,20 @@ function IdentityGate({ team, onAddMember, onSignIn }) {
   return (
     <div className="flex min-h-[700px] w-full items-center justify-center" style={{ backgroundColor: LIGHT }}>
       <div className="w-full max-w-md rounded-2xl p-8 shadow-sm" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
-        <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
+        <div className="mb-1 text-center text-lg font-bold text-navy">{t("نظام متابعة العملاء والتسعير")}</div>
+        <div className="mb-6 text-center text-xs text-muted">{t("مكتب الاستشارات المعمارية")}</div>
 
         {team.length === 0 ? (
           <>
-            <div className="mb-4 text-sm font-semibold text-ink">أول مرة تفتح الأداة — أدخل اسمك لإنشاء حساب مالك المكتب</div>
-            <input className="inp" placeholder="اسمك الكامل" value={name} onChange={e => setName(e.target.value)} />
+            <div className="mb-4 text-sm font-semibold text-ink">{t("أول مرة تفتح الأداة — أدخل اسمك لإنشاء حساب مالك المكتب")}</div>
+            <input className="inp" placeholder={t("اسمك الكامل")} value={name} onChange={e => setName(e.target.value)} />
             <button disabled={busy || !name.trim()} onClick={createOwner} className="mt-3 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-40 bg-navy">
-              بدء استخدام النظام كمالك للمكتب
+              {t("بدء استخدام النظام كمالك للمكتب")}
             </button>
           </>
         ) : (
           <>
-            <div className="mb-3 text-sm font-semibold text-ink">من أنت؟</div>
+            <div className="mb-3 text-sm font-semibold text-ink">{t("من أنت؟")}</div>
             <div className="flex flex-col gap-2">
               {team.map(m => (
                 <button key={m.id} onClick={() => onSignIn(m)} className="flex items-center justify-between rounded-lg px-4 py-2.5 text-sm font-semibold" style={{ border: `1px solid ${BORDER}` }}>
@@ -3925,26 +3959,26 @@ export function CloudAuthGate({ onAuthSuccess }) {
         <div className="blueprint" />
         <div className="loginartveil" />
         <div className="loginartbody">
-          <Eyebrow style={{ color: "#DCD6CC" }}>باب فريق المكتب</Eyebrow>
-          <div className="loginartname">نظام متابعة العملاء والتسعير</div>
+          <Eyebrow style={{ color: "#DCD6CC" }}>{t("باب فريق المكتب")}</Eyebrow>
+          <div className="loginartname">{t("نظام متابعة العملاء والتسعير")}</div>
           <div className="loginartline">
-            المشاريع والمقايسات والتحصيل ودفتر المقاولين — بحساب بريد وكلمة سر.
+            {t("المشاريع والمقايسات والتحصيل ودفتر المقاولين — بحساب بريد وكلمة سر.")}
           </div>
           <a href={doorUrls().base} className="eyebrow"
              style={{ color: "#FFFFFF", display: "inline-block", marginTop: 18,
                       borderBottom: "1px solid rgba(255,255,255,.5)", textDecoration: "none" }}>
-            لست من فريق المكتب؟ اختر بابك ←
+            {t("لست من فريق المكتب؟ اختر بابك ←")}
           </a>
         </div>
       </aside>
 
       <main className="loginform">
       <div className="w-full max-w-md">
-        <div className="mb-1 text-center text-lg font-bold text-navy">نظام متابعة العملاء والتسعير</div>
+        <div className="mb-1 text-center text-lg font-bold text-navy">{t("نظام متابعة العملاء والتسعير")}</div>
         <div className="mb-1 flex items-center justify-center gap-1.5 text-xs" style={{ color: "#4A6152" }}>
-          <Wifi size={13} /> وضع المزامنة السحابية مفعّل
+          <Wifi size={13} /> {t("وضع المزامنة السحابية مفعّل")}
         </div>
-        <div className="mb-6 text-center text-xs text-muted">مكتب الاستشارات المعمارية</div>
+        <div className="mb-6 text-center text-xs text-muted">{t("مكتب الاستشارات المعمارية")}</div>
 
         {pendingConfirm ? (
           <div className="text-center">
@@ -3952,69 +3986,69 @@ export function CloudAuthGate({ onAuthSuccess }) {
                  style={{ backgroundColor: "#ECFDF5" }}>
               <Mail size={26} style={{ color: "#047857" }} />
             </div>
-            <div className="mb-2 text-base font-bold text-navy">تفقّد بريدك الإلكتروني</div>
+            <div className="mb-2 text-base font-bold text-navy">{t("تفقّد بريدك الإلكتروني")}</div>
             <p className="mb-4 text-sm leading-6 text-muted">
               أرسلنا رابط تأكيد إلى <span className="font-bold" style={{ color: TEXT }}>{email}</span>.
               اضغط الرابط لتفعيل حسابك، ثم عد إلى هنا لتسجيل الدخول.
             </p>
             <div className="rounded-lg p-3 text-right text-xs leading-6" style={{ backgroundColor: "#F8FAFC", color: MUTED }}>
-              <div className="mb-1 font-bold" style={{ color: TEXT }}>لم تجد الرسالة؟</div>
+              <div className="mb-1 font-bold" style={{ color: TEXT }}>{t("لم تجد الرسالة؟")}</div>
               • تحقّق من مجلد البريد المزعج (Spam)<br />
               • قد تستغرق دقيقة أو دقيقتين<br />
-              • تأكّد من صحة البريد الذي كتبته
+              {t("• تأكّد من صحة البريد الذي كتبته")}
             </div>
             <button
               onClick={() => { setPendingConfirm(false); setMode("signin"); }}
               className="mt-4 w-full rounded-lg py-2.5 text-sm font-bold"
               style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
-              أكّدت بريدي — سجّل الدخول
+              {t("أكّدت بريدي — سجّل الدخول")}
             </button>
           </div>
         ) : (
           <>
             <div className="mb-4 flex rounded-lg p-1 bg-light">
-              <button onClick={() => setMode("signin")} className="flex-1 rounded-md py-1.5 text-sm font-bold" style={{ backgroundColor: mode === "signin" ? NAVY : "transparent", color: mode === "signin" ? "#FFFFFF" : TEXT }}>تسجيل الدخول</button>
-              <button onClick={() => setMode("signup")} className="flex-1 rounded-md py-1.5 text-sm font-bold" style={{ backgroundColor: mode === "signup" ? NAVY : "transparent", color: mode === "signup" ? "#FFFFFF" : TEXT }}>حساب جديد</button>
+              <button onClick={() => setMode("signin")} className="flex-1 rounded-md py-1.5 text-sm font-bold" style={{ backgroundColor: mode === "signin" ? NAVY : "transparent", color: mode === "signin" ? "#FFFFFF" : TEXT }}>{t("تسجيل الدخول")}</button>
+              <button onClick={() => setMode("signup")} className="flex-1 rounded-md py-1.5 text-sm font-bold" style={{ backgroundColor: mode === "signup" ? NAVY : "transparent", color: mode === "signup" ? "#FFFFFF" : TEXT }}>{t("حساب جديد")}</button>
             </div>
 
             {mode === "signup" && (
               <>
-                <input className="inp" placeholder="اسمك الكامل" value={name} onChange={e => setName(e.target.value)} />
+                <input className="inp" placeholder={t("اسمك الكامل")} value={name} onChange={e => setName(e.target.value)} />
 
                 <div className="mb-3 flex gap-1 rounded-lg p-1" style={{ backgroundColor: "#F1F5F9" }}>
                   <button onClick={() => setJoinMode("join")} className="flex-1 rounded-md py-1.5 text-xs font-bold"
                     style={{ backgroundColor: joinMode === "join" ? "#FFFFFF" : "transparent", color: TEXT }}>
-                    انضمام لمكتب
+                    {t("انضمام لمكتب")}
                   </button>
                   <button onClick={() => setJoinMode("create")} className="flex-1 rounded-md py-1.5 text-xs font-bold"
                     style={{ backgroundColor: joinMode === "create" ? "#FFFFFF" : "transparent", color: TEXT }}>
-                    مكتب جديد
+                    {t("مكتب جديد")}
                   </button>
                 </div>
 
                 {joinMode === "join" ? (
                   <>
-                    <input className="inp tracking-widest" placeholder="كود الدعوة" value={inviteCode}
+                    <input className="inp tracking-widest" placeholder={t("كود الدعوة")} value={inviteCode}
                       onChange={e => setInviteCode(e.target.value.toUpperCase())} />
                     <div className="mb-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
                       <ShieldCheck size={13} className="mt-0.5 shrink-0" />
-                      اطلب الكود من مالك مكتبك. بعد التسجيل يظل حسابك بانتظار موافقته.
+                      {t("اطلب الكود من مالك مكتبك. بعد التسجيل يظل حسابك بانتظار موافقته.")}
                     </div>
                   </>
                 ) : (
                   <>
-                    <input className="inp" placeholder="اسم المكتب" value={officeName}
+                    <input className="inp" placeholder={t("اسم المكتب")} value={officeName}
                       onChange={e => setOfficeName(e.target.value)} />
                     <div className="mb-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
                       <ShieldCheck size={13} className="mt-0.5 shrink-0" />
-                      ستكون مالك هذا المكتب، وتبدأ بتجربة مجانية ١٤ يومًا. بياناتك معزولة تمامًا عن أي مكتب آخر.
+                      {t("ستكون مالك هذا المكتب، وتبدأ بتجربة مجانية ١٤ يومًا. بياناتك معزولة تمامًا عن أي مكتب آخر.")}
                     </div>
                   </>
                 )}
               </>
             )}
-            <input className="inp" type="email" placeholder="البريد الإلكتروني" value={email} onChange={e => setEmail(e.target.value)} />
-            <input className="inp" type="password" placeholder="كلمة المرور" value={password} onChange={e => setPassword(e.target.value)} />
+            <input className="inp" type="email" placeholder={t("البريد الإلكتروني")} value={email} onChange={e => setEmail(e.target.value)} />
+            <input className="inp" type="password" placeholder={t("كلمة المرور")} value={password} onChange={e => setPassword(e.target.value)} />
             {error && <div className="mb-3 text-xs font-semibold" style={{ color: "#A8322B" }}>{error}</div>}
             <button
               disabled={busy || !email.trim() || !password}
@@ -4029,7 +4063,7 @@ export function CloudAuthGate({ onAuthSuccess }) {
           onClick={() => { setCloudConfig(null); window.location.reload(); }}
           className="mt-4 w-full text-center text-xs font-semibold underline text-muted"
         >
-          تعذّر الدخول؟ ارجع مؤقتًا للوضع المحلي
+          {t("تعذّر الدخول؟ ارجع مؤقتًا للوضع المحلي")}
         </button>
         <style>{`
           .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 10px 2px; border: none; border-bottom: 1px solid #C9C6C0; border-radius: 0; background: transparent; font-size: 13.5px; font-family: inherit; color: #14110F; }
@@ -4057,10 +4091,9 @@ function PendingApprovalScreen({ onSignOut, onRefresh }) {
             <Loader2 size={26} className="animate-spin" style={{ color: "#7A5E22" }} />
           </div>
         </div>
-        <div className="mb-2 text-lg font-bold text-navy">حسابك بانتظار الموافقة</div>
+        <div className="mb-2 text-lg font-bold text-navy">{t("حسابك بانتظار الموافقة")}</div>
         <p className="mb-5 text-sm leading-6 text-muted">
-          تم إنشاء حسابك بنجاح، لكن لازم مالك المكتب يوافق عليك أولاً قبل ما تقدر تدخل على بيانات العملاء.
-          الصفحة هتفتح تلقائيًا فور الموافقة — تقدر تسيبها مفتوحة أو ترجع بعد شوية.
+          {t("تم إنشاء حسابك بنجاح، لكن لازم مالك المكتب يوافق عليك أولاً قبل ما تقدر تدخل على بيانات العملاء. الصفحة هتفتح تلقائيًا فور الموافقة — تقدر تسيبها مفتوحة أو ترجع بعد شوية.")}
         </p>
         <button
           onClick={async () => { setChecking(true); await onRefresh(); setChecking(false); }}
@@ -4070,7 +4103,7 @@ function PendingApprovalScreen({ onSignOut, onRefresh }) {
           {checking ? "جاري التحقق…" : "تحقق الآن"}
         </button>
         <button onClick={onSignOut} className="w-full text-center text-xs font-semibold underline text-muted">
-          تسجيل الخروج
+          {t("تسجيل الخروج")}
         </button>
       </div>
     </div>
@@ -4090,27 +4123,27 @@ function SystemCheck() {
     setBusy(true);
     const out = [];
     const cloud = isCloudMode();
-    out.push({ k: "المزامنة السحابية", ok: cloud,
-               v: cloud ? "مفعّلة" : "محلي — الحسابات ورفع الصور تحتاجها" });
+    out.push({ k: t("المزامنة السحابية"), ok: cloud,
+               v: cloud ? t("مفعّلة") : t("محلي — الحسابات ورفع الصور تحتاجها") });
 
     /* أي مشروع Supabase تخاطبه الأداة فعلًا؟
        سؤال يبدو تافهًا حتى تُشغَّل الهجرة في مشروع والأداة تخاطب آخر —
        عندها تقول الأداة «الدالة غير موجودة» ويقول المكتب «شغّلتها». */
     const cfgUrl = (getCloudConfig() || {}).url || "";
-    out.push({ k: "مشروع Supabase المرتبط", ok: !!cfgUrl,
-               v: cfgUrl || "غير محدّد — قارنه بالمشروع الذي شغّلت فيه ملفات الهجرة" });
+    out.push({ k: t("مشروع Supabase المرتبط"), ok: !!cfgUrl,
+               v: cfgUrl || t("غير محدّد — قارنه بالمشروع الذي شغّلت فيه ملفات الهجرة") });
 
     const st = await bucketStatus();
-    out.push({ k: "مساحة الصور", ok: st.ok, v: st.message });
+    out.push({ k: t("مساحة الصور"), ok: st.ok, v: st.message });
 
     /* وجود دوال البوابة يُفحص بندائها فعلًا: الرد بخطأ «الدالة غير
        موجودة» يعني أن ملف الهجرة لم يُشغَّل بعد. */
     const sb = getSupabase();
     for (const [fn, label, file] of [
-      ["portal_check", "بوابة العميل", "010_client_portal.sql"],
-      ["storage_check", "بوابة المقاول", "011_storage_and_contractors.sql"],
+      ["portal_check", t("بوابة العميل"), "010_client_portal.sql"],
+      ["storage_check", t("بوابة المقاول"), "011_storage_and_contractors.sql"],
     ]) {
-      if (!cloud || !sb) { out.push({ k: label, ok: false, v: "تحتاج المزامنة السحابية" }); continue; }
+      if (!cloud || !sb) { out.push({ k: label, ok: false, v: t("تحتاج المزامنة السحابية") }); continue; }
       try {
         const { error } = await withTimeout(sb.rpc(fn), 12000);
         /* رسالة الخادم تُعرض كما هي بجوار التفسير: إخفاؤها هو ما جعل
@@ -4140,11 +4173,11 @@ function SystemCheck() {
       </div>
 
       <div className="mb-3 text-[11px]" style={{ color: MUTED }}>
-        نسخة الملفات المنشورة: <b className="num">{APP_VERSION}</b>
-        {" — "}{APP_FEATURES.join(" · ")}
+        {t("نسخة الملفات المنشورة:")} <b className="num">{APP_VERSION}</b>
+        {" — "}{APP_FEATURES.map(f => t(f)).join(" · ")}
       </div>
 
-      {!rows && <div className="text-xs" style={{ color: MUTED }}>جارٍ الفحص…</div>}
+      {!rows && <div className="text-xs" style={{ color: MUTED }}>{t("جارٍ الفحص…")}</div>}
       {rows && rows.map(r => (
         <div key={r.k} style={{ display: "flex", gap: 10, alignItems: "flex-start",
                                 borderBottom: `1px solid ${BORDER}`, padding: "9px 0" }}>
@@ -4155,6 +4188,91 @@ function SystemCheck() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ──────────────────── كلمة سر حساب المكتب ────────────────────
+   الحساب على Supabase Auth، وتغيير كلمته من هناك يمرّ ببريد إلكتروني.
+   ذلك يعمل، لكنه يخرجك من الأداة إلى صندوق بريد ثم إلى صفحة أخرى —
+   وثلاث خطوات في ثلاثة أماكن تكفي ليؤجّلها المرء إلى الأبد.
+
+   هنا في مكانها: نتحقّق أولًا من الكلمة الحالية بمحاولة دخول حقيقية،
+   ثم نغيّرها. لماذا التحقّق ونحن داخل جلسة قائمة؟ لأن الجلسة تبقى مفتوحة
+   على جهاز يُترك بلا قفل — فمن يجلس إليه دقيقةً ليس بالضرورة صاحبه. */
+export function OfficePassword({ email }) {
+  const [oldPw, setOldPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);   /* { ok, text } */
+
+  const short = showShort(newPw);
+  const mismatch = showMismatch(newPw, again);
+  const ready = passwordCheck(oldPw, newPw, again).ok && !busy;
+
+  const submit = async () => {
+    if (!ready) return;
+    setBusy(true); setMsg(null);
+    try {
+      const sb = getSupabase();
+      if (!sb) throw new Error("تغيير كلمة السر يحتاج تفعيل المزامنة السحابية");
+
+      const { error: bad } = await withTimeout(
+        sb.auth.signInWithPassword({ email: String(email || "").trim(), password: oldPw }), 15000);
+      if (bad) throw new Error("كلمة السر الحالية غير صحيحة");
+
+      const { error: upd } = await withTimeout(sb.auth.updateUser({ password: newPw }), 15000);
+      if (upd) throw new Error(upd.message || "تعذّر تغيير كلمة السر");
+
+      setOldPw(""); setNewPw(""); setAgain("");
+      setMsg({ ok: true, text: "✅ تغيّرت كلمة السر — استعملها في الدخول القادم" });
+    } catch (ex) {
+      setMsg({ ok: false, text: ex.message || String(ex) });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 24 }}>
+      <div className="h-section mb-2">{t("كلمة سر حسابك")}</div>
+      <div className="mb-3 text-[11px]" style={{ color: MUTED, lineHeight: 1.9 }}>
+        حساب <span style={{ direction: "ltr", display: "inline-block" }}>{email || "—"}</span>.
+        ثمانية أحرف على الأقل. لا تُخزَّن عندنا ولا يقرؤها أحد — نتحقّق من الحالية ثم نستبدلها.
+      </div>
+
+      <div style={{ display: "grid", gap: 12, maxWidth: 380 }}>
+        <div>
+          <div className="lbl mb-1">{t("كلمة السر الحالية")}</div>
+          <input className="inp" type="password" autoComplete="current-password"
+                 value={oldPw} onChange={e => setOldPw(e.target.value)} />
+        </div>
+        <div>
+          <div className="lbl mb-1">{t("كلمة السر الجديدة")}</div>
+          <input className="inp" type="password" autoComplete="new-password"
+                 value={newPw} onChange={e => setNewPw(e.target.value)} />
+          {short && <div className="mt-1 text-[11px]" style={{ color: MUTED }}>{t("ثمانية أحرف على الأقل")}</div>}
+        </div>
+        <div>
+          <div className="lbl mb-1">{t("أعدها مرة أخرى")}</div>
+          <input className="inp" type="password" autoComplete="new-password"
+                 value={again} onChange={e => setAgain(e.target.value)} />
+          {mismatch && <div className="mt-1 text-[11px]" style={{ color: DANGER }}>{t("الكلمتان غير متطابقتين")}</div>}
+        </div>
+
+        {msg && (
+          <div className="text-[11.5px]" style={{ color: msg.ok ? SAGE : DANGER, lineHeight: 1.9 }}>
+            {msg.text}
+          </div>
+        )}
+
+        <div>
+          <button onClick={submit} disabled={!ready} className="btn btn-primary"
+                  style={{ opacity: ready ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed" }}>
+            {busy ? "جاري الحفظ…" : "حفظ كلمة السر"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4311,16 +4429,17 @@ alter publication supabase_realtime add table profiles;`;
 
   return (
     <div className="max-w-lg">
-      <h2 className="mb-4 text-xl font-bold text-navy">الإعدادات العامة</h2>
+      <h2 className="mb-4 text-xl font-bold text-navy">{t("الإعدادات العامة")}</h2>
 
       <SystemCheck />
 
+      {cloud && currentMember?.email && <OfficePassword email={currentMember.email} />}
+
       {/* صورة الصفحة الافتتاحية: أول ما يراه من يفتح رابط المكتب */}
       <div style={{ borderTop: `1px solid ${INK}`, paddingTop: 12, marginBottom: 24 }}>
-        <div className="h-section mb-2">صورة الصفحة الافتتاحية</div>
+        <div className="h-section mb-2">{t("صورة الصفحة الافتتاحية")}</div>
         <div className="mb-2 text-[11px]" style={{ color: MUTED, lineHeight: 1.9 }}>
-          الصورة العريضة أعلى صفحة الدخول التي يفتحها العملاء والمقاولون.
-          الصق رابط صورة (مشهد ريندر أو لقطة مشروع منجَز).
+          {t("الصورة العريضة أعلى صفحة الدخول التي يفتحها العملاء والمقاولون. الصق رابط صورة (مشهد ريندر أو لقطة مشروع منجَز).")}
         </div>
         <input className="inp" placeholder="https://…" value={local.landingImage || ""}
                onChange={e => setLocal({ ...local, landingImage: e.target.value })} />
@@ -4328,13 +4447,12 @@ alter publication supabase_realtime add table profiles;`;
 
       <div className="sheet p-4">
         <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
-          <Wifi size={16} /> المزامنة السحابية بين الأجهزة (اختياري)
+          <Wifi size={16} /> {t("المزامنة السحابية بين الأجهزة (اختياري)")}
         </div>
         <p className="mb-3 text-xs leading-6 text-muted">
-          بدون إعداد هذا القسم، الأداة تعمل محليًا على هذا الجهاز فقط. لو عايز كل مهندس يدخل من جهازه
-          الشخصي ويشوف نفس البيانات لحظيًا، أنشئ مشروع مجاني على{" "}
+          {t("بدون إعداد هذا القسم، الأداة تعمل محليًا على هذا الجهاز فقط. لو عايز كل مهندس يدخل من جهازه الشخصي ويشوف نفس البيانات لحظيًا، أنشئ مشروع مجاني على")}{" "}
           <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: NAVY, fontWeight: "bold" }}>Supabase</a>
-          {" "}(٥ دقائق)، وألصق بياناته هنا.
+          {" "}{t("(٥ دقائق)، وألصق بياناته هنا.")}
         </p>
 
         {cloud ? (
@@ -4353,7 +4471,7 @@ alter publication supabase_realtime add table profiles;`;
                 {currentSimpleMode ? "التحويل لوضع الصلاحيات الكامل" : "التحويل للوضع التجريبي المبسط"}
               </button>
               <button onClick={disableCloud} className="rounded-md px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "#FFFFFF", color: "#A8322B", border: "1px solid #A8322B" }}>
-                تعطيل المزامنة والعودة للتخزين المحلي
+                {t("تعطيل المزامنة والعودة للتخزين المحلي")}
               </button>
             </div>
             <p className="mt-2 text-xs text-muted">
@@ -4365,9 +4483,8 @@ alter publication supabase_realtime add table profiles;`;
             <div className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FCE9E9", color: "#8A1414" }}>
               <ShieldCheck size={16} className="mt-0.5 shrink-0" />
               <span>
-                <b>تحديث أمان مهم:</b> النسخة الأولى من كود الإعداد كانت بتسمح لأي شخص يعمل حساب جديد يختار
-                لنفسه صلاحية "مالك المكتب"، وكانت قاعدة البيانات مش بتفرّق فعليًا بين الأدوار. لو سبق وفعّلت
-                المزامنة بكود قديم، لازم تشغّل الكود المناسب تحت مرة كمان (آمن تمامًا يتكرر) عشان يقفل الثغرة.
+                <b>{t("تحديث أمان مهم:")}</b>{" "}
+                {t("النسخة الأولى من كود الإعداد كانت بتسمح لأي شخص يعمل حساب جديد يختار لنفسه صلاحية «مالك المكتب»، وكانت قاعدة البيانات مش بتفرّق فعليًا بين الأدوار. لو سبق وفعّلت المزامنة بكود قديم، لازم تشغّل الكود المناسب تحت مرة كمان (آمن تمامًا يتكرر) عشان يقفل الثغرة.")}
               </span>
             </div>
             <Field label="Supabase Project URL">
@@ -4379,29 +4496,28 @@ alter publication supabase_realtime add table profiles;`;
             <label className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#7A5E22", cursor: "pointer" }}>
               <input type="checkbox" className="mt-0.5" checked={wantSimpleMode} onChange={e => setWantSimpleMode(e.target.checked)} />
               <span>
-                <b>وضع تجريبي مبسط:</b> بدون تسجيل حسابات فردية ولا موافقة مالك — أي جهاز يفتح الرابط يدخل
-                فورًا بكل الصلاحيات. مناسب لتجربة الفريق للنظام دلوقتي، لكن غير آمن لبيانات عملاء حقيقية.
-                تقدر ترجع تفعّل الصلاحيات الكاملة لاحقًا من نفس الشاشة دي بدون ما تفقد بياناتك.
+                <b>{t("وضع تجريبي مبسط:")}</b>{" "}
+                {t("بدون تسجيل حسابات فردية ولا موافقة مالك — أي جهاز يفتح الرابط يدخل فورًا بكل الصلاحيات. مناسب لتجربة الفريق للنظام دلوقتي، لكن غير آمن لبيانات عملاء حقيقية. تقدر ترجع تفعّل الصلاحيات الكاملة لاحقًا من نفس الشاشة دي بدون ما تفقد بياناتك.")}
               </span>
             </label>
             <div className="flex flex-wrap gap-2">
               <button disabled={!sbUrl.trim() || !sbKey.trim()} onClick={enableCloud} className="rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: "#4A6152" }}>
-                تفعيل المزامنة السحابية
+                {t("تفعيل المزامنة السحابية")}
               </button>
               <button onClick={() => setShowSql(!showSql)} className="rounded-lg px-4 py-2 text-sm font-bold" style={{ border: `1px solid ${NAVY}`, color: NAVY }}>
-                {showSql ? "إخفاء" : "إظهار"} كود إعداد قاعدة البيانات (SQL)
+                {showSql ? t("إخفاء") : t("إظهار")} {t("كود إعداد قاعدة البيانات (SQL)")}
               </button>
             </div>
             {showSql && (
               <div className="mt-3">
                 <p className="mb-2 text-xs text-muted">
-                  شغّل كود واحد بس حسب الوضع اللي هتفعّله (آمن تمامًا تكرر التشغيل لاحقًا لو غيّرت رأيك):
+                  {t("شغّل كود واحد بس حسب الوضع اللي هتفعّله (آمن تمامًا تكرر التشغيل لاحقًا لو غيّرت رأيك):")}
                 </p>
-                <p className="mb-1 text-xs font-bold" style={{ color: "#8A5A2B" }}>الوضع التجريبي المبسط:</p>
+                <p className="mb-1 text-xs font-bold" style={{ color: "#8A5A2B" }}>{t("الوضع التجريبي المبسط:")}</p>
                 <pre className="mb-3 overflow-x-auto rounded-lg p-3 text-xs" style={{ backgroundColor: "#1C1B19", color: "#E5E7EB", direction: "ltr", textAlign: "left" }}>
                   {SIMPLE_SQL_SCRIPT}
                 </pre>
-                <p className="mb-1 text-xs font-bold" style={{ color: "#4A6152" }}>وضع الصلاحيات الكامل:</p>
+                <p className="mb-1 text-xs font-bold" style={{ color: "#4A6152" }}>{t("وضع الصلاحيات الكامل:")}</p>
                 <pre className="overflow-x-auto rounded-lg p-3 text-xs" style={{ backgroundColor: "#1C1B19", color: "#E5E7EB", direction: "ltr", textAlign: "left" }}>
                   {SQL_SCRIPT}
                 </pre>
@@ -4412,7 +4528,7 @@ alter publication supabase_realtime add table profiles;`;
       </div>
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 text-sm font-bold text-navy">فريق المكتب والصلاحيات</div>
+        <div className="mb-3 text-sm font-bold text-navy">{t("فريق المكتب والصلاحيات")}</div>
 
         {currentSimpleMode ? (
           <div className="flex items-start gap-2 rounded-lg p-3 text-xs leading-6" style={{ backgroundColor: "#FEF3E2", color: "#7A5E22" }}>
@@ -4424,7 +4540,7 @@ alter publication supabase_realtime add table profiles;`;
         <>
         {cloud && can(currentMember, "manageTeam") && pendingMembers && pendingMembers.length > 0 && (
           <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: "#FAF3E4" }}>
-            <div className="mb-2 text-xs font-bold" style={{ color: "#7A5E22" }}>طلبات انضمام بانتظار الموافقة ({pendingMembers.length})</div>
+            <div className="mb-2 text-xs font-bold" style={{ color: "#7A5E22" }}>{t("طلبات انضمام بانتظار الموافقة (")}{pendingMembers.length})</div>
             <div className="flex flex-col gap-2">
               {pendingMembers.map(p => (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
@@ -4456,7 +4572,7 @@ alter publication supabase_realtime add table profiles;`;
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold">{m.name}</span>
                 <Badge text={roleLabel(m.role)} color={(ROLES[m.role] || ROLES.engineer).color} />
-                {currentMember?.id === m.id && <span className="text-xs text-muted">(أنت الآن)</span>}
+                {currentMember?.id === m.id && <span className="text-xs text-muted">{t("(أنت الآن)")}</span>}
               </div>
               {!cloud && team.length > 1 && (
                 <button onClick={() => onRemoveMember(m.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={15} /></button>
@@ -4467,16 +4583,16 @@ alter publication supabase_realtime add table profiles;`;
 
         {!cloud && (
           <div className="flex flex-wrap items-center gap-2">
-            <input className="flex-1 rounded-md px-2.5 py-1.5 text-xs" style={{ border: `1px solid ${BORDER}`, minWidth: 140 }} placeholder="اسم العضو الجديد" value={newName} onChange={e => setNewName(e.target.value)} />
+            <input className="flex-1 rounded-md px-2.5 py-1.5 text-xs" style={{ border: `1px solid ${BORDER}`, minWidth: 140 }} placeholder={t("اسم العضو الجديد")} value={newName} onChange={e => setNewName(e.target.value)} />
             <select className="rounded-md px-2 py-1.5 text-xs" style={{ border: `1px solid ${BORDER}` }} value={newRole} onChange={e => setNewRole(e.target.value)}>
-              <option value="engineer">مهندس</option>
-              <option value="owner">مالك المكتب</option>
+              <option value="engineer">{t("مهندس")}</option>
+              <option value="owner">{t("مالك المكتب")}</option>
             </select>
             <button
               onClick={() => { if (newName.trim()) { onAddMember(newName.trim(), newRole); setNewName(""); } }}
               className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold text-white bg-navy"
             >
-              <Plus size={13} /> إضافة
+              <Plus size={13} /> {t("إضافة")}
             </button>
           </div>
         )}
@@ -4484,8 +4600,8 @@ alter publication supabase_realtime add table profiles;`;
         <div className="mt-3 flex items-start gap-1.5 text-xs leading-5 text-muted">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
           {cloud
-            ? "كل مهندس بيسجّل حسابه بنفسه (بريد وكلمة سر حقيقيين)، ولازم مالك مكتب فعلي يوافق عليه من هنا قبل ما يشوف أي بيانات. الموافقة على الأدوار متحقّقة من قاعدة البيانات نفسها، مش من الواجهة فقط."
-            : "كل مهندس بيشوف بس العملاء المعيّن عليهم كـ\"مهندس مسؤول\" (من صفحة تفاصيل العميل)، أما مالك المكتب فيشوف الكل. هذا تنظيم للعرض فقط داخل هذا الجهاز، وليس حماية أمنية حقيقية — أي شخص يفتح نفس الجهاز يقدر يوصل لكل البيانات المخزّنة فعليًا."}
+            ? t("كل مهندس بيسجّل حسابه بنفسه (بريد وكلمة سر حقيقيين)، ولازم مالك مكتب فعلي يوافق عليه من هنا قبل ما يشوف أي بيانات. الموافقة على الأدوار متحقّقة من قاعدة البيانات نفسها، مش من الواجهة فقط.")
+            : t("كل مهندس بيشوف بس العملاء المعيّن عليهم كـ«مهندس مسؤول» (من صفحة تفاصيل العميل)، أما مالك المكتب فيشوف الكل. هذا تنظيم للعرض فقط داخل هذا الجهاز، وليس حماية أمنية حقيقية — أي شخص يفتح نفس الجهاز يقدر يوصل لكل البيانات المخزّنة فعليًا.")}
         </div>
         </>
         )}
@@ -4494,23 +4610,23 @@ alter publication supabase_realtime add table profiles;`;
       <TeamInvite license={license} />
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
-        <div className="mb-3 h-section">هوية المكتب</div>
+        <div className="mb-3 h-section">{t("هوية المكتب")}</div>
         {!(local.officeName || "").trim() && (
           <div className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs leading-5" style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
-            <span>أدخل اسم مكتبك قبل تصدير أي عقد أو عرض للعميل — بدونه سيظهر اسم عام في المستندات.</span>
+            <span>{t("أدخل اسم مكتبك قبل تصدير أي عقد أو عرض للعميل — بدونه سيظهر اسم عام في المستندات.")}</span>
           </div>
         )}
-        <Field label="اسم المكتب">
+        <Field label={t("اسم المكتب")}>
           <input
             className="inp"
-            placeholder="مثال: النخبة"
+            placeholder={t("مثال: النخبة")}
             value={local.officeName || ""}
             onChange={e => setLocal({ ...local, officeName: e.target.value })}
             onKeyDown={e => { if (e.key === "Enter") onSave(local); }}
           />
         </Field>
-        <Field label="هاتف المكتب">
+        <Field label={t("هاتف المكتب")}>
           <input
             className="inp"
             placeholder="01xxxxxxxxx"
@@ -4520,7 +4636,7 @@ alter publication supabase_realtime add table profiles;`;
             onKeyDown={e => { if (e.key === "Enter") onSave(local); }}
           />
         </Field>
-        <Field label="عنوان المكتب">
+        <Field label={t("عنوان المكتب")}>
           <input
             className="inp"
             value={local.officeAddress || ""}
@@ -4529,20 +4645,20 @@ alter publication supabase_realtime add table profiles;`;
           />
         </Field>
 
-        <div className="mb-3 mt-5 h-section">النسب المالية</div>
-        <Field label="نسبة أتعاب الإشراف الهندسي %">
+        <div className="mb-3 mt-5 h-section">{t("النسب المالية")}</div>
+        <Field label={t("نسبة أتعاب الإشراف الهندسي %")}>
           <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.supervisionPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, supervisionPct: Number(e.target.value) / 100 })} />
         </Field>
-        <Field label="نسبة احتياطي الأعمال غير المنظورة %">
+        <Field label={t("نسبة احتياطي الأعمال غير المنظورة %")}>
           <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.contingencyPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, contingencyPct: Number(e.target.value) / 100 })} />
         </Field>
-        <Field label="نسبة ضريبة القيمة المضافة %">
+        <Field label={t("نسبة ضريبة القيمة المضافة %")}>
           <input type="number" inputMode="decimal" step="0.1" className="inp" value={(local.vatPct * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, vatPct: Number(e.target.value) / 100 })} />
         </Field>
-        <Field label="نسبة الربح المتفق عليها مع العميل % — تُحصَّل بعد تسليم كل مرحلة">
+        <Field label={t("نسبة الربح المتفق عليها مع العميل % — تُحصَّل بعد تسليم كل مرحلة")}>
           <input type="number" inputMode="decimal" step="0.5" min="0" className="inp"
             value={((local.agreedProfitPct || 0) * 100).toFixed(1)}
             onChange={e => setLocal({ ...local, agreedProfitPct: Number(e.target.value) / 100 })}
@@ -4550,31 +4666,27 @@ alter publication supabase_realtime add table profiles;`;
         </Field>
         {!(local.agreedProfitPct > 0) && (
           <div className="-mt-2 mb-3 text-[11px] leading-5" style={{ color: "#7A5E22" }}>
-            بصفر، جدول التحصيل هيعرض قيمة المراحل بدون أي ربح للمكتب. ده رقمك أنت — النظام
-            لا يخترعه، لأن عقدًا مبنيًا على نسبة لم يتفق عليها أحد أسوأ من عقد بلا نسبة.
-            يمكن تجاوز هذه النسبة لكل عميل على حدة من صفحة المقايسة.
+            {t("بصفر، جدول التحصيل هيعرض قيمة المراحل بدون أي ربح للمكتب. ده رقمك أنت — النظام لا يخترعه، لأن عقدًا مبنيًا على نسبة لم يتفق عليها أحد أسوأ من عقد بلا نسبة. يمكن تجاوز هذه النسبة لكل عميل على حدة من صفحة المقايسة.")}
           </div>
         )}
         <button onClick={() => onSave(local)} className="mt-2 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-navy">
-          <Save size={15} /> حفظ الإعدادات
+          <Save size={15} /> {t("حفظ الإعدادات")}
         </button>
       </div>
 
       <div className="mt-4 rounded-xl p-4" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}` }}>
         <div className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
-          <ShieldCheck size={16} /> النسخ الاحتياطي والحفظ الدائم
+          <ShieldCheck size={16} /> {t("النسخ الاحتياطي والحفظ الدائم")}
         </div>
         <p className="mb-3 text-xs leading-6 text-muted">
-          بيانات {clientCount} عميل محفوظة داخل هذا المتصفح على هذا الجهاز فقط (IndexedDB)، وتفضل موجودة حتى بعد إغلاق الجهاز أو قطع الإنترنت.
-          لكنها لا تنتقل تلقائيًا لجهاز أو متصفح آخر — نزّل نسخة احتياطية بشكل دوري واحتفظ بها في مكان آمن (Google Drive مثلاً)،
-          واستخدم "استيراد" على أي جهاز آخر لنقل نفس البيانات إليه.
+          {t("بيانات")} {clientCount} {t("عميل محفوظة داخل هذا المتصفح على هذا الجهاز فقط (IndexedDB)، وتفضل موجودة حتى بعد إغلاق الجهاز أو قطع الإنترنت. لكنها لا تنتقل تلقائيًا لجهاز أو متصفح آخر — نزّل نسخة احتياطية بشكل دوري واحتفظ بها في مكان آمن (Google Drive مثلًا)، واستخدم «استيراد» على أي جهاز آخر لنقل نفس البيانات إليه.")}
         </p>
         <div className="flex flex-wrap gap-2">
           <button onClick={onExportBackup} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-gold">
-            <Download size={15} /> تصدير نسخة احتياطية
+            <Download size={15} /> {t("تصدير نسخة احتياطية")}
           </button>
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold" style={{ border: `1px solid ${NAVY}`, color: NAVY }}>
-            <UploadCloud size={15} /> استيراد نسخة احتياطية
+            <UploadCloud size={15} /> {t("استيراد نسخة احتياطية")}
           </button>
           <input
             ref={fileInputRef}
@@ -4587,7 +4699,7 @@ alter publication supabase_realtime add table profiles;`;
       </div>
 
       <div className="mt-4 rounded-xl p-4 text-xs leading-6" style={{ backgroundColor: "#FFFFFF", border: `1px solid ${BORDER}`, color: MUTED }}>
-        هذه النسب تنعكس تلقائيًا على حساب كل عميل بمجرد الحفظ. البيانات محفوظة بشكل خاص، ولا يراها إلا من يستخدم هذا الجهاز والمتصفح.
+        {t("هذه النسب تنعكس تلقائيًا على حساب كل عميل بمجرد الحفظ. البيانات محفوظة بشكل خاص، ولا يراها إلا من يستخدم هذا الجهاز والمتصفح.")}
       </div>
       <style>{`
         .inp { width: 100%; margin-top: 4px; margin-bottom: 12px; padding: 10px 2px; border: none; border-bottom: 1px solid #C9C6C0; border-radius: 0; background: transparent; font-size: 13.5px; font-family: inherit; color: #14110F; }
@@ -4613,15 +4725,15 @@ class ErrorBoundary extends React.Component {
     if (this.state.error) {
       return (
         <div style={{ padding: 40, textAlign: "center", color: "#1C1B19" }}>
-          <h2 style={{ color: "#A8322B", marginBottom: 10 }}>حدث خطأ غير متوقع في التطبيق</h2>
+          <h2 style={{ color: "#A8322B", marginBottom: 10 }}>{t("حدث خطأ غير متوقع في التطبيق")}</h2>
           <p style={{ color: "#6E6A63", marginBottom: 16 }}>
-            بياناتك محفوظة بأمان في المتصفح ولم تتأثر. حاول تحديث الصفحة، ولو استمرت المشكلة استخدم نسخة احتياطية سابقة من تبويب الإعدادات.
+            {t("بياناتك محفوظة بأمان في المتصفح ولم تتأثر. حاول تحديث الصفحة، ولو استمرت المشكلة استخدم نسخة احتياطية سابقة من تبويب الإعدادات.")}
           </p>
           <button
             onClick={() => window.location.reload()}
             style={{ backgroundColor: "#A8553A", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: "bold", cursor: "pointer" }}
           >
-            إعادة تحميل الصفحة
+            {t("إعادة تحميل الصفحة")}
           </button>
         </div>
       );
@@ -4662,38 +4774,37 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
 
   if (!mayEdit) {
     return <div className="sheet p-6 text-center text-sm text-muted">
-      دفتر الأسعار متاح لمدير المشاريع أو مالك المكتب فقط.
+      {t("دفتر الأسعار متاح لمدير المشاريع أو مالك المكتب فقط.")}
     </div>;
   }
 
   return (
     <div className="sheet p-4">
-      <div className="mb-1 h-section">دفتر أسعار المكتب</div>
+      <div className="mb-1 h-section">{t("دفتر أسعار المكتب")}</div>
       <p className="mb-3 text-xs text-muted">
-        أدخل تكلفة الوحدة لكل مستوى. بدونها يقدّر النظام التكلفة، ويظل رقم الهامش غير موثوق.
-        البند الذي لم يُحدَّث منذ 6 أشهر معلَّم — أسعار السوق تتحرك بسرعة.
+        {t("أدخل تكلفة الوحدة لكل مستوى. بدونها يقدّر النظام التكلفة، ويظل رقم الهامش غير موثوق. البند الذي لم يُحدَّث منذ 6 أشهر معلَّم — أسعار السوق تتحرك بسرعة.")}
       </p>
 
-      <input className="inp mb-3" placeholder="بحث بالاسم أو الكود…" value={q} onChange={e => setQ(e.target.value)} />
+      <input className="inp mb-3" placeholder={t("بحث بالاسم أو الكود…")} value={q} onChange={e => setQ(e.target.value)} />
 
       <div className="overflow-x-auto">
       {drift.length > 0 && (
         <div className="sheet mb-3 p-3" style={{ borderColor: "#B08A3E" }}>
           <div className="mb-2 text-xs font-bold" style={{ color: "#7A5E22" }}>
-            بنود تسعّرها فعليًا بغير سعر الكتالوج
+            {t("بنود تسعّرها فعليًا بغير سعر الكتالوج")}
           </div>
           {drift.slice(0, 6).map(d => (
             <div key={d.id} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
               <span className="code">{d.id}</span>
               <span className="font-semibold text-ink">{d.name}</span>
               <span className="num text-muted">
-                الكتالوج <b>{fmt(d.catalogue)}</b> · المعتاد لديك <b style={{ color: "#4A6152" }}>{fmt(d.suggested)}</b>
-                {" "}({d.drift > 0 ? "+" : ""}{(d.drift * 100).toFixed(0)}% من {d.samples} مشاريع)
+                الكتالوج <b>{fmt(d.catalogue)}</b> {t("· المعتاد لديك")} <b style={{ color: "#4A6152" }}>{fmt(d.suggested)}</b>
+                {" "}({d.drift > 0 ? "+" : ""}{(d.drift * 100).toFixed(0)}{t("% من")} {d.samples} {t("مشاريع)")}
               </span>
             </div>
           ))}
           <div className="mt-1.5 text-[10px] text-muted">
-            مستنتَج من مشاريعك أنت — لا من أي مصدر خارجي. حدّث الكتالوج ليوفّر عليك التجاوز اليدوي كل مرة.
+            {t("مستنتَج من مشاريعك أنت — لا من أي مصدر خارجي. حدّث الكتالوج ليوفّر عليك التجاوز اليدوي كل مرة.")}
           </div>
         </div>
       )}
@@ -4702,9 +4813,9 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
         <table className="w-full min-w-[640px] text-xs">
           <thead>
             <tr className="border-b" style={{ borderColor: "var(--color-line)" }}>
-              <th className="p-2 text-right lbl">البند</th>
-              {LEVELS.map(lv => <th key={lv} className="p-2 text-center lbl">{lv}</th>)}
-              <th className="p-2 text-center lbl">الهامش</th>
+              <th className="p-2 text-right lbl">{t("البند")}</th>
+              {LEVELS.map(lv => <th key={lv} className="p-2 text-center lbl">{t(lv)}</th>)}
+              <th className="p-2 text-center lbl">{t("الهامش")}</th>
             </tr>
           </thead>
           <tbody>
@@ -4715,18 +4826,18 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
               return [
                 <tr key={id} className="border-b" style={{ borderColor: "var(--color-line)" }}>
                   <td className="p-2">
-                    <span className="block font-semibold leading-4">{name}</span>
+                    <span className="block font-semibold leading-4">{t(name)}</span>
                     <span className="code mt-0.5 inline-block">{id}</span>
-                    {stale.has(id) && <span className="mr-1 text-[9px]" style={{ color: "#8A5A2B" }}>غير محدَّث</span>}
+                    {stale.has(id) && <span className="mr-1 text-[9px]" style={{ color: "#8A5A2B" }}>{t("غير محدَّث")}</span>}
                   </td>
                   {LEVELS.map((lv, i) => (
                     <td key={lv} className="p-1 text-center">
-                      <div className="num text-[10px] text-muted">بيع {prices[i]}</div>
+                      <div className="num text-[10px] text-muted">{t("بيع")} {prices[i]}</div>
                       <input
                         type="number" inputMode="decimal"
                         className="num w-16 rounded px-1 py-0.5 text-center text-[11px]"
                         style={{ border: "1px solid var(--color-line)" }}
-                        placeholder="تكلفة"
+                        placeholder={t("تكلفة")}
                         value={entry.cost?.[i] || ""}
                         onChange={e => setCost(id, i, e.target.value)}
                       />
@@ -4756,12 +4867,12 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                         className="rounded px-2 py-0.5 text-[10px] font-bold"
                         style={{ border: `1px solid ${BORDER}`, color: NAVY }}
                       >
-                        {openAnalysis?.id === id ? "إخفاء التحليل" : "تحليل السعر"}
+                        {openAnalysis?.id === id ? t("إخفاء التحليل") : t("تحليل السعر")}
                       </button>
                       {LEVELS.map((lv, i) => itemAnalysis(book, id, i) && (
                         <span key={lv} className="rounded-full px-2 py-0.5 text-[9px] font-bold"
                               style={{ backgroundColor: "#EDF2EE", color: "#4A6152" }}>
-                          {lv} محلَّل
+                          {lv} {t("محلَّل")}
                         </span>
                       ))}
                     </div>
@@ -4769,7 +4880,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                     {openAnalysis?.id === id && (
                       <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: LIGHT, border: `1px solid ${BORDER}` }}>
                         <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className="lbl">تحليل تكلفة {unit} واحد عند مستوى:</span>
+                          <span className="lbl">{t("تحليل تكلفة")} {unit} {t("واحد عند مستوى:")}</span>
                           {LEVELS.map((lv, i) => (
                             <button key={lv} onClick={() => setOpenAnalysis({ id, levelIdx: i })}
                               className="rounded px-2 py-0.5 text-[10px] font-bold"
@@ -4795,14 +4906,14 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                             );
                           })}
                           <div style={{ minWidth: 110 }}>
-                            <div className="text-[9px] font-bold text-muted">إجمالي التكلفة</div>
+                            <div className="text-[9px] font-bold text-muted">{t("إجمالي التكلفة")}</div>
                             <div className="num rounded px-1 py-0.5 text-center text-[11px] font-bold"
                                  style={{ border: `1px solid ${BORDER}`, backgroundColor: "#FFFFFF" }}>
                               {fmt(analysisTotal(itemAnalysis(book, id, openAnalysis.levelIdx) || {}))}
                             </div>
                           </div>
                           <div style={{ minWidth: 90 }}>
-                            <div className="text-[9px] font-bold text-muted">سعر البيع</div>
+                            <div className="text-[9px] font-bold text-muted">{t("سعر البيع")}</div>
                             <div className="num rounded px-1 py-0.5 text-center text-[11px] font-bold"
                                  style={{ border: `1px solid ${BORDER}`, backgroundColor: "#FFFFFF", color: NAVY }}>
                               {fmt(prices[openAnalysis.levelIdx])}
@@ -4813,7 +4924,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                           const an = itemAnalysis(book, id, openAnalysis.levelIdx);
                           if (!an) return (
                             <div className="mt-2 text-[10px] text-muted">
-                              أدخل ما تدفعه فعليًا لكل فئة عن {unit} واحد. المجموع يصبح تكلفة البند،
+                              أدخل ما تدفعه فعليًا لكل فئة عن {unit} {t("واحد. المجموع يصبح تكلفة البند،")}
                               ويُقارَن لاحقًا بمصروفات الموقع بنفس التصنيف.
                             </div>
                           );
@@ -4836,7 +4947,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
                                 ))}
                                 <span className="font-bold" style={{ color: sell > total ? "#4A6152" : "#A8322B" }}>
                                   الهامش {sell > 0 ? (((sell - total) / sell) * 100).toFixed(0) : 0}%
-                                  {" "}({fmt(sell - total)} ج.م لكل {unit})
+                                  {" "}({fmt(sell - total)} {t("ج.م لكل")} {unit})
                                 </span>
                               </div>
                             </>
@@ -4853,7 +4964,7 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
         </div>
       </div>
       {visible.length > 60 && (
-        <div className="mt-2 text-center text-xs text-muted">يُعرض 60 من {visible.length} — استخدم البحث</div>
+        <div className="mt-2 text-center text-xs text-muted">{t("يُعرض 60 من")} {visible.length} {t("— استخدم البحث")}</div>
       )}
     </div>
   );
@@ -4862,9 +4973,9 @@ function PriceBookPanel({ book, onSave, currentMember, clients }) {
 function StorageUnsupported() {
   return (
     <div style={{ padding: 40, textAlign: "center", color: "#1C1B19" }}>
-      <h2 style={{ color: "#A8322B", marginBottom: 10 }}>هذا المتصفح لا يدعم التخزين الدائم</h2>
+      <h2 style={{ color: "#A8322B", marginBottom: 10 }}>{t("هذا المتصفح لا يدعم التخزين الدائم")}</h2>
       <p style={{ color: "#6E6A63" }}>
-        يرجى فتح هذه الأداة من متصفح حديث (Chrome / Edge / Firefox / Safari) خارج وضع التصفح الخفي، لضمان حفظ بياناتك بشكل دائم.
+        {t("يرجى فتح هذه الأداة من متصفح حديث (Chrome / Edge / Firefox / Safari) خارج وضع التصفح الخفي، لضمان حفظ بياناتك بشكل دائم.")}
       </p>
     </div>
   );

@@ -1,3 +1,4 @@
+import { t } from "../ui/i18n.js";
 import { PHASES } from "../ui/tokens.js";
 import { phaseOf } from "./catalogue.js";
 import { COST_KINDS, emptyAnalysis, distributeIndirect } from "./costing.js";
@@ -130,7 +131,7 @@ export function phasePaymentPlan(client, settings, byPhase) {
       mayStart: baseSettled,
       deliveredAt,
       profitClaimable: !!deliveredAt && profitDue > 0.5,
-      status, statusLabel: PHASE_PAY_STATUS[status],
+      status, statusLabel: t(PHASE_PAY_STATUS[status]),
     };
   });
 

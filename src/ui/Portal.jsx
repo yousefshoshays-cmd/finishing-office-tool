@@ -2,10 +2,11 @@ import React, { useState, useEffect } from "react";
 import { INK, PAPER, MUTED, LINE, STONE, SAGE, COPPER, DANGER, PHASE_COLORS, STAGE_COLORS } from "./tokens.js";
 import { Eyebrow, Rule, Meta, MetaGrid, SectionHead, LangToggle } from "./editorial.jsx";
 import { t, useLang, applyDocumentLang, currency } from "./i18n.js";
-import { portalLogin, portalBrand } from "../data/portal.js";
+import { portalLogin, portalBrand, changePortalPassword } from "../data/portal.js";
 import { fmt, DEFAULT_SETTINGS } from "../domain/catalogue.js";
 import { calcByPhase, migrateClient } from "../domain/pricing.js";
 import { phasePaymentPlan } from "../domain/finance.js";
+import { passwordCheck, showShort, showMismatch, MIN_PASSWORD } from "../domain/password.js";
 
 /* ════════════════════════════════════════════════════════════════════════
    بوابة العميل والمقاول
@@ -40,7 +41,12 @@ function LoginScreen({ onDone, kindHint = "client" }) {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true); setErr("");
-    try { onDone(await portalLogin(u.trim(), p.trim())); }
+    try {
+      const s = await portalLogin(u.trim(), p.trim());
+      /*  الاسم يُحفظ مع الجلسة لا ليُعرض، بل ليكفي صاحبَ الحساب كتابةَ
+          كلمتَي السر وحدهما عند التغيير. كلمة السر نفسها لا تُحفظ.  */
+      onDone({ ...s, username: u.trim().toUpperCase() });
+    }
     catch (ex) { setErr(ex.message); }
     setBusy(false);
   };
@@ -177,7 +183,7 @@ export function ClientView({ session }) {
                           fontSize: 12.5, color: hero ? "#E7E2DA" : MUTED }}>
               <span>{t(client.stage || "")}</span>
               {client.address && <span>· {client.address}</span>}
-              {client.area > 0 && <span>· {client.area} م²</span>}
+              {client.area > 0 && <span>· {client.area} {t("م²")}</span>}
             </div>
           </div>
         </div>
@@ -238,9 +244,9 @@ export function ClientView({ session }) {
 
               <div className="metagrid" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))",
                                                  columnGap: 14, marginTop: 10, borderTop: "none" }}>
-                <Meta label="قبل البدء" value={fmt(r.quote)} />
-                <Meta label="بعد التسليم" value={fmt(r.profitDue)} />
-                <Meta label="المدفوع" value={fmt(r.paidBase + r.paidProfit)}
+                <Meta label={t("قبل البدء")} value={fmt(r.quote)} />
+                <Meta label={t("بعد التسليم")} value={fmt(r.profitDue)} />
+                <Meta label={t("المدفوع")} value={fmt(r.paidBase + r.paidProfit)}
                       color={r.baseSettled && r.profitSettled ? SAGE : undefined} />
               </div>
 
@@ -311,12 +317,23 @@ export function ContractorView({ session }) {
                    title={session.name || t("حسابك الجاري")}
                    subtitle={t("حسابك عبر مشاريع المكتب")} />
 
+      {/*  المتبقي = التعاقد − المعتمد. فإن لم تُسجَّل قيمة تعاقد أصلًا صار
+          الناتج سالبًا بحجم ما صُرف — فيقرأ المقاول أنه مدينٌ للمكتب
+          بمئة ألف وهو دائن. الرقم صحيح حسابيًا وكاذب في معناه، فنمتنع
+          عن قوله ونقول سببه بدلًا منه.  */}
       <MetaGrid cols={4} style={{ columnGap: 20, marginBottom: 26 }} items={[
-        { label: "قيمة التعاقدات", value: `${fmt(totals.contract)} ${currency()}` },
+        { label: "قيمة التعاقدات", value: totals.contract > 0 ? `${fmt(totals.contract)} ${currency()}` : "—" },
         { label: "المعتمد", value: `${fmt(certified)} ${currency()}` },
         { label: "محتجز الضمان", value: `${fmt(totals.retained)} ${currency()}`, color: COPPER },
-        { label: "المتبقي لك", value: `${fmt(totals.contract - certified)} ${currency()}`, color: SAGE },
+        { label: "المتبقي لك",
+          value: totals.contract > 0 ? `${fmt(totals.contract - certified)} ${currency()}` : "—",
+          color: SAGE },
       ]} />
+      {totals.contract === 0 && rows.length > 0 && (
+        <div style={{ fontSize: 11.5, color: MUTED, lineHeight: 1.9, marginTop: -14, marginBottom: 24 }}>
+          {t("لم تُسجَّل قيمة تعاقد في هذه المشاريع بعد، فلا يمكن حساب المتبقي — المعروض أعلاه ما اعتُمد لك فعلًا. راجع المكتب لتسجيل قيمة التعاقد.")}
+        </div>
+      )}
 
       {rows.length === 0 && (
         <div style={{ fontSize: 13, color: MUTED, padding: "30px 0", borderTop: `1px solid ${LINE}` }}>
@@ -336,14 +353,14 @@ export function ContractorView({ session }) {
                 <b style={{ fontSize: 15.5, fontWeight: 500 }}>{r.project}</b>
                 {r.address && <span style={{ fontSize: 11.5, color: MUTED }}> · {r.address}</span>}
               </div>
-              {trades.length > 0 && <Eyebrow>{trades.join(" · ")}</Eyebrow>}
+              {trades.length > 0 && <Eyebrow>{trades.map(x => t(x)).join(" · ")}</Eyebrow>}
             </div>
 
             <MetaGrid cols={4} style={{ columnGap: 14, marginTop: 12 }} items={[
-              { label: "قيمة التعاقد", value: fmt(contract) },
+              { label: "قيمة التعاقد", value: contract > 0 ? fmt(contract) : "—" },
               { label: "المصروف", value: fmt(paid) },
               { label: "محتجز الضمان", value: fmt(retained), color: COPPER },
-              { label: "المتبقي", value: fmt(contract - paid - retained), color: SAGE },
+              { label: "المتبقي", value: contract > 0 ? fmt(contract - paid - retained) : "—", color: SAGE },
             ]} />
 
             {(r.payments || []).length > 0 && (
@@ -376,9 +393,105 @@ export function ContractorView({ session }) {
   );
 }
 
+
+/* ──────────────────── تغيير كلمة السر ────────────────────
+   كلمة السر التي يُصدرها المكتب يعرفها اثنان. وكلمة سر يعرفها اثنان
+   ليست كلمة سرّ صاحبها. هنا يجعلها سرًّا لا يعرفه سواه.
+
+   لا نطلب اسم المستخدم — هو محفوظ من لحظة الدخول. ولا نطلب كلمة السر
+   الحالية ثقةً بالشاشة: الخادم هو من يتحقّق منها قبل أن يغيّر شيئًا. */
+export function ChangePassword({ username, onClose }) {
+  const [oldPw, setOldPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(false);
+  useLang();
+
+  const short = showShort(newPw);
+  const mismatch = showMismatch(newPw, again);
+  const ready = passwordCheck(oldPw, newPw, again).ok && !busy;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true); setErr("");
+    try { await changePortalPassword(username, oldPw, newPw); setDone(true); }
+    catch (ex) { setErr(ex.message); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="lightbox" onClick={onClose} role="dialog" aria-modal="true">
+      <div onClick={e => e.stopPropagation()}
+           style={{ background: PAPER, color: INK, width: "min(420px, 92vw)",
+                    padding: "30px 30px 26px", border: `1px solid ${LINE}`, textAlign: "start" }}>
+        {done ? (
+          <>
+            <Eyebrow>{t("تم")}</Eyebrow>
+            <div style={{ fontSize: 19, fontWeight: 300, margin: "10px 0 8px" }}>
+              {t("تغيّرت كلمة السر")}
+            </div>
+            <div style={{ fontSize: 12.5, color: MUTED, lineHeight: 1.95, marginBottom: 22 }}>
+              {t("استعملها في المرة القادمة. لا أحد يعرفها الآن سواك — ولا المكتب.")}
+            </div>
+            <button className="btn btn-primary" onClick={onClose} style={{ width: "100%" }}>
+              {t("إغلاق")}
+            </button>
+          </>
+        ) : (
+          <form onSubmit={submit}>
+            <Eyebrow>{t("الحساب")}</Eyebrow>
+            <div style={{ fontSize: 19, fontWeight: 300, margin: "10px 0 6px" }}>
+              {t("تغيير كلمة السر")}
+            </div>
+            <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.9, marginBottom: 20 }}>
+              {t("ثمانية أحرف على الأقل. اختر ما تحفظه أنت — فالمكتب لن يستطيع قراءتها.")}
+            </div>
+
+            <Eyebrow>{t("كلمة السر الحالية")}</Eyebrow>
+            <input className="inp" type="password" value={oldPw} autoComplete="current-password"
+                   onChange={e => setOldPw(e.target.value)} />
+
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>{t("كلمة السر الجديدة")}</Eyebrow>
+              <input className="inp" type="password" value={newPw} autoComplete="new-password"
+                     onChange={e => setNewPw(e.target.value)} />
+              {short && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 6 }}>
+                {t("ثمانية أحرف على الأقل")}</div>}
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>{t("أعدها مرة أخرى")}</Eyebrow>
+              <input className="inp" type="password" value={again} autoComplete="new-password"
+                     onChange={e => setAgain(e.target.value)} />
+              {mismatch && <div style={{ fontSize: 11.5, color: DANGER, marginTop: 6 }}>
+                {t("الكلمتان غير متطابقتين")}</div>}
+            </div>
+
+            {err && <div style={{ marginTop: 14, fontSize: 12, color: DANGER, lineHeight: 1.8 }}>{err}</div>}
+
+            <button type="submit" className="btn btn-primary" disabled={!ready}
+                    style={{ width: "100%", marginTop: 22 }}>
+              {busy ? t("جاري الحفظ…") : t("حفظ كلمة السر")}
+            </button>
+            <button type="button" onClick={onClose}
+                    style={{ width: "100%", marginTop: 10, background: "none", border: "none",
+                             cursor: "pointer", color: MUTED, fontSize: 12, fontFamily: "inherit" }}>
+              {t("إلغاء")}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────── الغلاف ───────────────────────── */
 export default function Portal({ kindHint = "client" }) {
   const [session, setSession] = useState(null);
+  const [changing, setChanging] = useState(false);
   const lang = useLang();
   React.useEffect(() => { applyDocumentLang(); }, [lang]);
 
@@ -398,6 +511,10 @@ export default function Portal({ kindHint = "client" }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <LangToggle />
+          <button onClick={() => setChanging(true)} className="eyebrow"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: INK }}>
+            {t("كلمة السر")}
+          </button>
           <button onClick={() => setSession(null)} className="eyebrow"
                   style={{ background: "none", border: "none", cursor: "pointer", color: INK }}>
             {t("خروج")}
@@ -410,6 +527,10 @@ export default function Portal({ kindHint = "client" }) {
         : <main style={{ maxWidth: 940, margin: "0 auto", padding: "34px 20px 70px" }}>
             <ContractorView session={session} />
           </main>}
+
+      {changing && (
+        <ChangePassword username={session.username} onClose={() => setChanging(false)} />
+      )}
     </div>
   );
 }

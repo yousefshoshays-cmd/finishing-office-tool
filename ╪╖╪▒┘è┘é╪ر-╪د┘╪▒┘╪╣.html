@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>طريقة الرفع — دليل ثابت يُرفق مع كل تحديث</title>
+<style>
+  :root{--ink:#14110F;--line:#E2E0DC;--firm:#C9C6C0;--muted:#83807A;--copper:#8C5A2B;--danger:#9E2B22;--sage:#3F5B49}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);line-height:1.95;
+       font-family:-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:34px 20px 80px}
+  .eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block}
+  h1{font-size:36px;font-weight:400;letter-spacing:-.02em;line-height:1.3;margin:6px 0 10px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 24px}
+  hr{border:none;border-top:1px solid var(--ink);margin:0 0 34px}
+  section{margin-bottom:44px}
+  h2{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+     border-top:1px solid var(--ink);padding-top:12px;margin:0 0 16px}
+  p,li{font-size:14.3px} ul,ol{padding-right:20px;margin:8px 0} li{margin-bottom:7px}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.6px;color:var(--copper);
+       direction:ltr;display:inline-block;background:#F6F5F3;padding:1px 6px}
+  kbd{font-size:12.4px;font-weight:600;direction:ltr;display:inline-block;border:1px solid var(--firm);padding:1px 8px}
+  .step{display:flex;gap:16px;align-items:flex-start;padding:15px 0;border-bottom:1px solid var(--line)}
+  .num{flex:0 0 30px;height:30px;border:1px solid var(--ink);display:flex;align-items:center;
+       justify-content:center;font-size:13px}
+  .step h4{margin:2px 0 5px;font-size:15px;font-weight:600}
+  .step p{margin:0;font-size:14px}
+  .note{border-inline-start:2px solid var(--ink);padding:10px 14px;margin:16px 0;font-size:13.6px;background:#FAFAF9}
+  .note.warn{border-inline-start-color:var(--danger)}
+  .note.good{border-inline-start-color:var(--sage)}
+  table{width:100%;border-collapse:collapse;font-size:13.4px;margin:12px 0}
+  th{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+     text-align:start;border-bottom:1px solid var(--ink);padding:8px 10px;font-weight:500}
+  td{border-bottom:1px solid var(--line);padding:10px;vertical-align:top}
+  .big{border:1px solid var(--ink);padding:16px 18px;margin:18px 0}
+  .big h3{margin:0 0 8px;font-size:16px;font-weight:600}
+  footer{color:var(--muted);font-size:12.4px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<span class="eyebrow">دليل ثابت · يُرفق مع كل تحديث</span>
+<h1>طريقة الرفع</h1>
+<p class="lead">النسخة المبسّطة: النشر صار من الفرع مباشرة، بلا عملية بناء يمكن أن تفشل.</p>
+<hr>
+
+<section>
+  <h2>ما تغيّر في هذه النسخة ولماذا</h2>
+  <p>كان النشر يمرّ بعامل بناء على GitHub، وهو يفشل لأسباب لا علاقة لها بالأداة —
+     وهذا ما حدث فعلًا (علامة × حمراء بعد ١٧ ثانية)، فبقي موقعك على النسخة القديمة
+     رغم أن ملفاتك سليمة تمامًا.</p>
+  <div class="big">
+    <h3>الترتيب الجديد</h3>
+    <p style="margin:0 0 6px"><b>النشر:</b> من الفرع مباشرة. مستودعك يحتوي أصلًا على الملفات
+       المبنية جاهزة، فلا حاجة لأي بناء — GitHub يعرض الملفات كما هي.</p>
+    <p style="margin:0"><b>الفحص:</b> بقي عامل يشغّل الاختبارات بعد كل رفع، لكنه <b>لا ينشر</b>.
+       فشله يخبرك فقط ولا يعطّل موقعك.</p>
+  </div>
+</section>
+
+<section>
+  <h2>خطوة صفر · اضبط مصدر النشر (مرة واحدة في العمر)</h2>
+  <div class="step"><div class="num">١</div><div>
+    <h4>Settings ← Pages</h4>
+    <p>من صفحة مستودعك، اضغط <b>Settings</b> في الشريط العلوي، ثم <b>Pages</b> من القائمة الجانبية.</p>
+  </div></div>
+  <div class="step"><div class="num">٢</div><div>
+    <h4>Source = <code>Deploy from a branch</code></h4>
+    <p>ثم Branch = <b>main</b> و Folder = <b>/ (root)</b> ← <b>Save</b>.</p>
+  </div></div>
+  <div class="note good">
+    هذا الوضع لا يفشل: لا يبني شيئًا ولا يثبّت اعتماديات — يعرض الملفات المرفوعة كما هي.
+  </div>
+</section>
+
+<section>
+  <h2>خطوة ١ · الرفع</h2>
+
+  <div class="step"><div class="num">١</div><div>
+    <h4>فُكّ ضغط الملف المرفق</h4>
+    <p>بداخله: <code>src</code> · <code>assets</code> · <code>fonts</code> ·
+       <code>migrations</code> · <code>test</code> · <code>.github</code> ·
+       <code>index.html</code> · <code>styles.css</code> · <code>package.json</code>.</p>
+  </div></div>
+
+  <div class="step"><div class="num">٢</div><div>
+    <h4>افتح محرّر GitHub المدمج</h4>
+    <p>من الصفحة الرئيسية للمستودع اضغط زر النقطة <kbd>.</kbd>
+       (أو غيّر <code>github.com</code> إلى <code>github.dev</code> في شريط العنوان).</p>
+  </div></div>
+
+  <div class="step"><div class="num">٣</div><div>
+    <h4>احذف مجلد <code>assets</code> القديم</h4>
+    <p>زر الفأرة الأيمن ← <b>Delete</b>. يمنع بقاء ملفات ميتة تُربك الرفع.</p>
+  </div></div>
+
+  <div class="step"><div class="num">٤</div><div>
+    <h4>اسحب <u>محتويات</u> المجلد الجديد</h4>
+    <p>حدّد ما بداخل المجلد — لا المجلد نفسه — واسحبه فوق شجرة الملفات.</p>
+  </div></div>
+
+  <div class="step"><div class="num">٥</div><div>
+    <h4>Commit &amp; Push</h4>
+    <p>أيقونة <b>Source Control</b> ← اكتب وصفًا ← <b>Commit &amp; Push</b>.</p>
+  </div></div>
+</section>
+
+<section>
+  <h2>خطوة ٢ · التحقّق</h2>
+  <ol>
+    <li>انتظر دقيقة إلى دقيقتين (النشر من الفرع سريع).</li>
+    <li>افتح الموقع بـ <kbd>Ctrl + Shift + R</kbd> — تحديث قسري يتجاوز ذاكرة المتصفح.</li>
+    <li><b>إدارة المكتب ← الإعدادات ← حالة النظام</b> ← اقرأ أول سطر:
+        <b>نسخة الملفات المنشورة</b>.</li>
+  </ol>
+  <table>
+    <tr><th style="width:40%">ما تراه</th><th>المعنى</th></tr>
+    <tr><td>النسخة الجديدة ظاهرة</td><td>✅ وصل ونُشر. تابع لخطوة ٣.</td></tr>
+    <tr><td>النسخة قديمة</td><td>انتظر دقيقتين وأعد <kbd>Ctrl+Shift+R</kbd>، أو جرّب نافذة خفية.</td></tr>
+    <tr><td>لا توجد شاشة «حالة النظام» أصلًا</td><td>الرفع لم يصل — راجع خطوة ١.</td></tr>
+  </table>
+  <div class="note">
+    <b>ملاحظة تقنية:</b> أضفت بصمة نسخة إلى روابط <code>main.js</code> و<code>styles.css</code>
+    داخل <code>index.html</code>. هذا يُجبر المتصفح على تحميل الملف الجديد بدل الاحتفاظ بالقديم
+    لأن الاسم لم يتغيّر — وهو أحد أسباب «رفعت ولم يتغيّر شيء».
+  </div>
+</section>
+
+<section>
+  <h2>خطوة ٣ · ملفات قاعدة البيانات (مرة واحدة لكل ملف)</h2>
+  <ol>
+    <li>Supabase ← مشروعك ← <b>SQL Editor</b> ← <b>New query</b>.</li>
+    <li>الصق <code>migrations/013_portal_install.sql</code> كاملًا ← <b>Run</b>.</li>
+    <li>اقرأ الجدول الذي يظهر في الأسفل: كل سطر ✅ أو ❌ مع سبب النقص.</li>
+  </ol>
+  <div class="note good">
+    <b>ملف واحد يكفي.</b> ١٣ يغني عن ١٠ و١١ ولا يتعارض معهما، وكل جزء فيه محمي
+    بفحص وجود مسبق — فلا تُسقط جملةٌ فاشلة الملفَ كله كما كان يحدث.
+  </div>
+</section>
+
+<section>
+  <h2>لو ظهرت × حمراء في تبويب Actions</h2>
+  <p><b>موقعك لن يتأثر</b> — العامل الجديد للفحص فقط ولا ينشر شيئًا. لكن اضغط عليها
+     وانسخ أول سطر أحمر وأرسله لي؛ فهو يخبرني بخلل حقيقي في الكود أو الاختبارات.</p>
+</section>
+
+<footer>اضبط Pages مرة ← ارفع ← Ctrl+Shift+R ← اقرأ «حالة النظام» ← شغّل ملفات قاعدة البيانات</footer>
+</div>
+</body>
+</html>

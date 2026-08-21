@@ -1,3 +1,4 @@
+import { t } from "../ui/i18n.js";
 
 export const ROLES = {
   owner:    { label: "مالك المكتب", color: "#B08A3E", textOn: "#1C1B19" },
@@ -24,6 +25,8 @@ export function can(member, action) {
   return !!member && allowed.includes(member.role);
 }
 
+/*  اسم الدور يُعرض في عشرات المواضع — ترجمته هنا مرة واحدة
+    تكفي عنها جميعًا.  */
 export function roleLabel(role) {
-  return (ROLES[role] || ROLES.engineer).label;
+  return t((ROLES[role] || ROLES.engineer).label);
 }

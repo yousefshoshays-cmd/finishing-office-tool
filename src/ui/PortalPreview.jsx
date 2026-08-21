@@ -48,7 +48,7 @@ export default function PortalPreview() {
                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{state.settings?.officeName || ""}</div>
-          <Eyebrow>معاينة — هكذا يرى العميل صفحته</Eyebrow>
+          <Eyebrow>{t("معاينة — هكذا يرى العميل صفحته")}</Eyebrow>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <LangToggle />

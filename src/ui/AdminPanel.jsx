@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Loader2, AlertCircle, RefreshCw, Search } from "lucide-react";
+import { t, useLang } from "./i18n.js";
 import { listOrgs, summary, setLicense, setSeats, renameOrg, orgHealth, activityNote } from "../data/admin.js";
 import { pendingPayments, reviewPayment } from "../data/billing.js";
 
@@ -85,7 +86,7 @@ export default function AdminPanel({ onToast, onError }) {
       <div className="flex h-64 items-center justify-center">
         <div className="flex flex-col items-center gap-3" style={{ color: MUTED }}>
           <Loader2 className="animate-spin" size={26} />
-          <div className="text-sm">جاري تحميل المكاتب…</div>
+          <div className="text-sm">{t("جاري تحميل المكاتب…")}</div>
         </div>
       </div>
     );
@@ -95,24 +96,24 @@ export default function AdminPanel({ onToast, onError }) {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl font-bold" style={{ color: NAVY }}>إدارة المنصّة</h2>
+          <h2 className="text-xl font-bold" style={{ color: NAVY }}>{t("إدارة المنصّة")}</h2>
           <p className="mt-1 text-xs" style={{ color: MUTED }}>
             المكاتب المشتركة وحالة تراخيصها. هذه الصفحة لا تظهر لأي مكتب.
           </p>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold"
                 style={{ border: `1px solid ${BORDER}`, color: TEXT }}>
-          <RefreshCw size={13} /> تحديث
+          <RefreshCw size={13} /> {t("تحديث")}
         </button>
       </div>
 
       {stats && (
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <Stat label="إجمالي المكاتب" value={stats.total} />
-          <Stat label="مشتركة" value={stats.active} tone="ok" />
-          <Stat label="تجربة" value={stats.trial} tone="warn" />
-          <Stat label="تنتهي خلال ٣ أيام" value={stats.expiringSoon} tone="danger" />
-          <Stat label="منتهية" value={stats.expired} tone="danger" />
+          <Stat label={t("إجمالي المكاتب")} value={stats.total} />
+          <Stat label={t("مشتركة")} value={stats.active} tone="ok" />
+          <Stat label={t("تجربة")} value={stats.trial} tone="warn" />
+          <Stat label={t("تنتهي خلال ٣ أيام")} value={stats.expiringSoon} tone="danger" />
+          <Stat label={t("منتهية")} value={stats.expired} tone="danger" />
         </div>
       )}
 
@@ -121,7 +122,7 @@ export default function AdminPanel({ onToast, onError }) {
              style={{ backgroundColor: "#FAF3E4", color: "#7A5E22" }}>
           <AlertCircle size={14} className="mt-0.5 shrink-0" />
           <span>
-            {stats.expiringSoon} مكتب على وشك الانتهاء. هذه أفضل لحظة للاتصال —
+            {stats.expiringSoon} {t("مكتب على وشك الانتهاء. هذه أفضل لحظة للاتصال —")}
             المكتب الذي يستخدم الأداة يوميًا يجدّد، والخامل يحتاج مكالمة شرح لا مكالمة بيع.
           </span>
         </div>
@@ -144,11 +145,11 @@ export default function AdminPanel({ onToast, onError }) {
                     </div>
                   </div>
                   <div className="text-sm font-bold" style={{ color: TEXT }}>
-                    {Number(p.amount_egp).toLocaleString("ar-EG")} ج.م
+                    {Number(p.amount_egp).toLocaleString("ar-EG")} {t("ج.م")}
                   </div>
                 </div>
                 <div className="mt-1.5 text-[11px]" style={{ color: MUTED }}>
-                  الوسيلة: {p.method} · المرجع: <span className="font-bold" style={{ color: TEXT }}>{p.reference || "—"}</span>
+                  الوسيلة: {p.method} {t("· المرجع:")} <span className="font-bold" style={{ color: TEXT }}>{p.reference || "—"}</span>
                 </div>
                 <div className="mt-2 flex gap-2">
                   <button
@@ -184,7 +185,7 @@ export default function AdminPanel({ onToast, onError }) {
         <input
           className="w-full rounded-lg py-2 pr-9 pl-3 text-sm"
           style={{ border: `1px solid ${BORDER}` }}
-          placeholder="ابحث باسم المكتب أو بريد المالك"
+          placeholder={t("ابحث باسم المكتب أو بريد المالك")}
           value={q}
           onChange={e => setQ(e.target.value)}
         />
@@ -225,7 +226,7 @@ export default function AdminPanel({ onToast, onError }) {
                       />
                     ) : (
                       <div className="truncate text-sm font-bold" style={{ color: NAVY }}
-                           onDoubleClick={() => setEditing(org.id)} title="نقرة مزدوجة لتعديل الاسم">
+                           onDoubleClick={() => setEditing(org.id)} title={t("نقرة مزدوجة لتعديل الاسم")}>
                         {org.name}
                       </div>
                     )}
@@ -240,9 +241,9 @@ export default function AdminPanel({ onToast, onError }) {
                 </div>
 
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: MUTED }}>
-                  <span>الأعضاء: {org.members} / {org.seats}</span>
-                  {org.pending > 0 && <span style={{ color: "#7A5E22" }}>بانتظار موافقة: {org.pending}</span>}
-                  <span>كود الدعوة: <code className="font-bold">{org.inviteCode}</code></span>
+                  <span>{t("الأعضاء:")} {org.members} / {org.seats}</span>
+                  {org.pending > 0 && <span style={{ color: "#7A5E22" }}>{t("بانتظار موافقة:")} {org.pending}</span>}
+                  <span>{t("كود الدعوة:")} <code className="font-bold">{org.inviteCode}</code></span>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -263,7 +264,7 @@ export default function AdminPanel({ onToast, onError }) {
                   </button>
                   <div className="flex items-center gap-1 rounded-lg px-2 py-1"
                        style={{ border: `1px solid ${BORDER}` }}>
-                    <span className="text-[11px] font-semibold" style={{ color: MUTED }}>مقاعد</span>
+                    <span className="text-[11px] font-semibold" style={{ color: MUTED }}>{t("مقاعد")}</span>
                     <input
                       type="number"
                       inputMode="numeric"
