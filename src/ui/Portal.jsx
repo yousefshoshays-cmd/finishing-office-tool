@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { INK, PAPER, MUTED, LINE, STONE, SAGE, COPPER, DANGER, PHASE_COLORS, STAGE_COLORS } from "./tokens.js";
+import { INK, PAPER, MUTED, LINE, STONE, SAGE, COPPER, DANGER, PHASE_COLORS, PHASE_SHORT, PHASES, STAGE_COLORS } from "./tokens.js";
 import { Eyebrow, Rule, Meta, MetaGrid, SectionHead, LangToggle } from "./editorial.jsx";
 import { t, useLang, applyDocumentLang, currency } from "./i18n.js";
 import { portalLogin, portalBrand, changePortalPassword } from "../data/portal.js";
@@ -159,6 +159,14 @@ export function ClientView({ session }) {
   const receipts = (client.receipts || []).filter(r => Number(r.amount) > 0);
   const progress = Number(client.progressPercent) || 0;
 
+  /*  المرحلة الحالية والمُسلَّمة — من بيانات العميل نفسها، بلا حساب جديد.
+      المُسلَّم: ما له تاريخ تسليم فعليّ (لا ما اكتمل سداده — العميل يهمّه
+      أين وصل البناء لا أين وصل الدفع). الحالية: أول مرحلة لم تُسلَّم بعد. */
+  const deliveredSet = new Set(
+    (plan.rows || []).filter(r => r.deliveredAt).map(r => r.phase)
+  );
+  const currentPhase = PHASES.find(ph => !deliveredSet.has(ph)) || null;
+
   return (
     <div>
       {/* ══ الواجهة ══ */}
@@ -190,6 +198,33 @@ export function ClientView({ session }) {
       </div>
 
       <div style={{ maxWidth: 1040, margin: "0 auto", padding: "0 22px 70px" }}>
+        {/* ══ سطر الطمأنينة: أين وصلنا، بلغة بشر لا أرقام ══
+            العميل يريد أولًا أن يطمئن أنه في مشروعه هو وأنه يعرف موضعه. */}
+        <div className="reveal" style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: "clamp(17px,2.6vw,22px)", fontWeight: 300, lineHeight: 1.5 }}>
+            {currentPhase
+              ? <>{t("مشروعك في مرحلة")} <b style={{ fontWeight: 600 }}>{t(currentPhase)}</b>{progress > 0 ? <> — {progress}% {t("مكتمل")}</> : null}</>
+              : (progress > 0 ? <>{progress}% {t("مكتمل")}</> : t("مشروعك قيد المتابعة"))}
+          </div>
+        </div>
+
+        {/* ══ العمود الفقري: المراحل الخمس خطًّا زمنيًّا مرئيًّا ══
+            أقوى عنصر طمأنة — يرى مشروعه كخطّ يتقدّم: المسلَّم ✓، والجاري مُبرَز. */}
+        <section className="reveal spine" aria-label={t("مراحل المشروع")}>
+          {PHASES.map((ph, i) => {
+            const done = deliveredSet.has(ph);
+            const isNow = ph === currentPhase;
+            return (
+              <div key={ph} className={"spine-step" + (done ? " is-done" : "") + (isNow ? " is-now" : "")}>
+                <span className="spine-dot" style={{ backgroundColor: done ? SAGE : (isNow ? INK : STONE) }}>
+                  {done ? "✓" : i + 1}
+                </span>
+                <span className="spine-lbl">{t(PHASE_SHORT[ph] || ph)}</span>
+              </div>
+            );
+          })}
+        </section>
+
         {/* ══ نسبة الإنجاز ══ */}
         {progress > 0 && (
           <div className="reveal" style={{ marginBottom: 30 }}>
@@ -204,16 +239,7 @@ export function ClientView({ session }) {
           </div>
         )}
 
-        {/* ══ الأرقام ══ */}
-        <MetaGrid cols={4} style={{ columnGap: 20, marginBottom: 34 }} items={[
-          { label: "قيمة العقد", value: `${fmt(plan.contractTotal)} ${currency()}` },
-          { label: "المحصّل", value: `${fmt(plan.collected)} ${currency()}`, color: SAGE },
-          { label: "المتبقي", value: `${fmt(Math.max(0, plan.contractTotal - plan.collected))} ${currency()}` },
-          { label: "المستحق الآن", value: `${fmt(plan.dueNow)} ${currency()}`,
-            color: plan.dueNow > 0.5 ? COPPER : undefined },
-        ]} />
-
-        {/* ══ المعرض ══ */}
+        {/* ══ المعرض: الحمولة العاطفية — أن يرى مشروعه يكبر ══ */}
         {rest.length > 0 && (
           <section className="reveal" style={{ marginBottom: 36 }}>
             <div className="h-section" style={{ marginBottom: 12 }}>{t("من الموقع")}</div>
@@ -226,6 +252,15 @@ export function ClientView({ session }) {
             </div>
           </section>
         )}
+
+        {/* ══ مالُه هو، بعينه هو — بلا رقم داخليّ واحد للمكتب ══ */}
+        <MetaGrid cols={4} style={{ columnGap: 20, marginBottom: 34 }} items={[
+          { label: "قيمة العقد", value: `${fmt(plan.contractTotal)} ${currency()}` },
+          { label: "المحصّل", value: `${fmt(plan.collected)} ${currency()}`, color: SAGE },
+          { label: "المتبقي", value: `${fmt(Math.max(0, plan.contractTotal - plan.collected))} ${currency()}` },
+          { label: "المستحق الآن", value: `${fmt(plan.dueNow)} ${currency()}`,
+            color: plan.dueNow > 0.5 ? COPPER : undefined },
+        ]} />
 
         {/* ══ المراحل ══ */}
         <section className="reveal" style={{ ...card }}>
@@ -317,17 +352,35 @@ export function ContractorView({ session }) {
                    title={session.name || t("حسابك الجاري")}
                    subtitle={t("حسابك عبر مشاريع المكتب")} />
 
-      {/*  المتبقي = التعاقد − المعتمد. فإن لم تُسجَّل قيمة تعاقد أصلًا صار
-          الناتج سالبًا بحجم ما صُرف — فيقرأ المقاول أنه مدينٌ للمكتب
-          بمئة ألف وهو دائن. الرقم صحيح حسابيًا وكاذب في معناه، فنمتنع
-          عن قوله ونقول سببه بدلًا منه.  */}
-      <MetaGrid cols={4} style={{ columnGap: 20, marginBottom: 26 }} items={[
+      {/*  الهرمية هنا: رقمان كبيران يجيبان سؤالَي المقاول قبل أي شيء —
+          «كم لي؟» و«كم محتجَز عليّ؟» — بخطّ ضخم على ورق فاتح عالي التباين،
+          يُقرأ على هاتف في الشمس. التفصيل والتعاقد أرقام هادئة تحتهما.
+
+          المتبقي = التعاقد − المعتمد. فإن لم تُسجَّل قيمة تعاقد أصلًا صار
+          الناتج سالبًا بحجم ما صُرف — فيقرأ المقاول أنه مدينٌ وهو دائن.
+          فحين يغيب التعاقد نعرض «المعتمد لك» بدل «المتبقي» ونقول السبب.  */}
+      <div className="paybig reveal">
+        <div className="paybig-cell">
+          <div className="paybig-lbl">{totals.contract > 0 ? t("المتبقّي لك") : t("المعتمد لك")}</div>
+          <div className="paybig-num" style={{ color: INK }}>
+            {fmt(totals.contract > 0 ? totals.contract - certified : certified)}
+            <span className="paybig-cur">{currency()}</span>
+          </div>
+        </div>
+        <div className="paybig-div" />
+        <div className="paybig-cell">
+          <div className="paybig-lbl">{t("محتجز الضمان")}</div>
+          <div className="paybig-num" style={{ color: COPPER }}>
+            {fmt(totals.retained)}
+            <span className="paybig-cur">{currency()}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* أرقام هادئة داعمة — تُبقي قيمة التعاقدات والمعتمد في المشهد بلا مزاحمة */}
+      <MetaGrid cols={2} style={{ columnGap: 20, marginBottom: 26, maxWidth: 460 }} items={[
         { label: "قيمة التعاقدات", value: totals.contract > 0 ? `${fmt(totals.contract)} ${currency()}` : "—" },
         { label: "المعتمد", value: `${fmt(certified)} ${currency()}` },
-        { label: "محتجز الضمان", value: `${fmt(totals.retained)} ${currency()}`, color: COPPER },
-        { label: "المتبقي لك",
-          value: totals.contract > 0 ? `${fmt(totals.contract - certified)} ${currency()}` : "—",
-          color: SAGE },
       ]} />
       {totals.contract === 0 && rows.length > 0 && (
         <div style={{ fontSize: 11.5, color: MUTED, lineHeight: 1.9, marginTop: -14, marginBottom: 24 }}>

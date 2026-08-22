@@ -177,17 +177,17 @@ function LicenseBanner({ license, onUpgrade }) {
     warn:  { bg: "#FAF3E4", fg: "#7A5E22" },
     error: { bg: "#FEF2F2", fg: "#A8322B" },
   };
-  const t = tones[notice.tone] || tones.info;
+  const tone = tones[notice.tone] || tones.info;
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 text-center text-xs font-semibold"
-         style={{ backgroundColor: t.bg, color: t.fg }}>
+         style={{ backgroundColor: tone.bg, color: tone.fg }}>
       <AlertCircle size={14} className="shrink-0" />
       <span>{notice.text}</span>
       {onUpgrade && (
         <button onClick={onUpgrade}
                 className="rounded-md px-2.5 py-1.5 text-[11px] font-bold text-white"
-                style={{ backgroundColor: t.fg }}>
-          {license.canWrite ? "اشترك الآن" : "تفعيل الاشتراك"}
+                style={{ backgroundColor: tone.fg }}>
+          {license.canWrite ? t("اشترك الآن") : t("تفعيل الاشتراك")}
         </button>
       )}
     </div>
@@ -725,12 +725,21 @@ function AppInner() {
     }
   };
 
+  /*  الترخيص وصلاحية المنصّة يُقرآن من الخادم، وكلاهما يحتاج جلسة قائمة.
+
+      كان الفحص يجري مرة واحدة عند تركيب الشاشة — أي قبل أن تُستعاد
+      الجلسة من المتصفّح. فيردّ الخادم «لا جلسة» فيُفهم «لست مديرًا»،
+      ويثبت على ذلك حتى إعادة تحميل الصفحة. وهذا هو سبب ظهور تبويب
+      «إدارة المنصّة» مرة وغيابه مرة: سباق بين الفحص واستعادة الجلسة،
+      لا عطل ثابت — ولذلك بدا عشوائيًا.
+
+      الآن يُعاد الفحص كلما تغيّر من هو الداخل فعلًا.  */
   useEffect(() => {
     let alive = true;
     fetchLicense().then(l => { if (alive) setLicense(l); }).catch(() => {});
     amIPlatformAdmin().then(v => { if (alive) setIsAdmin(v); }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [currentMember?.id, cloud]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
   const showError = (msg) => { setErrorToast(msg); setTimeout(() => setErrorToast(null), 5000); };
@@ -886,6 +895,42 @@ function AppInner() {
       totalValue += calc.grandTotal;
     });
     return { byStage, totalValue, count: visibleClients.length };
+  }, [visibleClients, settings]);
+
+  /*  ═══ مُجمِّع مال المكتب — يجيب سؤال الصباح: «أين مالي؟» ═══
+      لا محرّك جديد: يلفّ الدوال القائمة (contractValue · phasePaymentPlan ·
+      phaseBudget) على كل عملاء المكتب ويجمع. يحترم العزل: يعمل على
+      visibleClients وحدها — فمن لا يرى كل العملاء لا يُجمَّع له غير عملائه. */
+  const moneyStats = useMemo(() => {
+    let contracted = 0, collected = 0, spent = 0, profit = 0;
+    const dueRows = [], pendingRows = [], overrunRows = [];
+    for (const c of visibleClients) {
+      const byPhase = calcByPhase(c, settings);
+      const cv = contractValue(c);
+      const plan = phasePaymentPlan(c, settings, byPhase);
+      const budget = phaseBudget(c, byPhase);
+      contracted += cv.total || 0;
+      collected += plan.collected || 0;
+      spent += budget.spent || 0;
+      profit += (c.receipts || [])
+        .filter(r => r.kind === "profit").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+      if ((plan.dueNow || 0) > 0.5)
+        dueRows.push({ id: c.id, name: c.name || t("بدون اسم"), amount: plan.dueNow });
+      if ((cv.pendingValue || 0) > 0.5)
+        pendingRows.push({ id: c.id, name: c.name || t("بدون اسم"), amount: cv.pendingValue, count: cv.pendingCount });
+      if ((budget.overruns || []).length)
+        overrunRows.push({ id: c.id, name: c.name || t("بدون اسم"),
+                           amount: budget.overruns.reduce((s, o) => s + (o.spent - o.planned), 0) });
+    }
+    dueRows.sort((a, b) => b.amount - a.amount);
+    pendingRows.sort((a, b) => b.amount - a.amount);
+    overrunRows.sort((a, b) => b.amount - a.amount);
+    return {
+      contracted, collected, spent, profit,
+      remaining: Math.max(0, contracted - collected),
+      dueRows, pendingRows, overrunRows,
+    };
   }, [visibleClients, settings]);
 
   if (loading) {
@@ -1063,7 +1108,7 @@ function AppInner() {
 
       <div className="px-5 py-8 sm:px-9 sm:py-11">
         {tab === "dashboard" && (
-          <Dashboard stats={pipelineStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); setSection("clients"); }} />
+          <Dashboard stats={pipelineStats} money={moneyStats} onAdd={addClient} clients={visibleClients} settings={settings} onOpenClient={(id) => { setSelectedId(id); setTab("clients"); setSection("clients"); }} />
         )}
 
         {tab === "clients" && !selected && (
@@ -1160,19 +1205,74 @@ function AppInner() {
 }
 
 /* ============================= Dashboard ============================= */
-function Dashboard({ stats, onAdd, clients, settings, onOpenClient }) {
+export function Dashboard({ stats, money, onAdd, clients, settings, onOpenClient }) {
   const recent = clients.slice(0, 5);
+  const m = money || { contracted: 0, collected: 0, spent: 0, profit: 0, remaining: 0, dueRows: [], pendingRows: [], overrunRows: [] };
+  const actions = [
+    ...m.dueRows.map(r => ({ ...r, kind: "due" })),
+    ...m.pendingRows.map(r => ({ ...r, kind: "pending" })),
+    ...m.overrunRows.map(r => ({ ...r, kind: "overrun" })),
+  ];
   return (
     <div>
-      <SectionHead eyebrow={t("لوحة المتابعة")}
-                   title={t("نظرة عامة على خط العملاء")}
+      <SectionHead eyebrow={t("المكتب")}
+                   title={t("أين مالك اليوم")}
                    subtitle={officeLine(settings)}>
         <button onClick={onAdd} className="btn btn-primary shrink-0">
           <Plus size={15} /> {t("عميل جديد")}
         </button>
       </SectionHead>
 
-      {/* سبع خانات في سبعة أعمدة — الشبكة السداسية كانت تترك فجوة */}
+      {/* ═══ شريط المال: خمسة أرقام تجيب سؤال الصباح قبل أي شيء ═══
+          قيمة التعاقدات هي المتعاقَد عليه فعلًا (لا خط الأعمال المتفائل).
+          المتبقّي تحصيله بالنحاسي لأنه ما يستدعي فعلًا. */}
+      <div className="mb-9 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard label={t("قيمة التعاقدات")} value={fmt(m.contracted)} sub={currency()} />
+        <StatCard label={t("المحصّل")} value={fmt(m.collected)} sub={currency()} accent={SAGE} />
+        <StatCard label={t("المتبقّي تحصيله")} value={fmt(m.remaining)} sub={currency()} accent={COPPER} />
+        <StatCard label={t("المصروف")} value={fmt(m.spent)} sub={currency()} />
+        <StatCard label={t("الربح المحقّق")} value={fmt(m.profit)} sub={currency()} accent={SAGE} />
+      </div>
+
+      {/* ═══ يحتاج إجراءً: المال المعرّض للخطر، كل سطر يقودك لصاحبه ═══ */}
+      <div className="mb-11" style={{ borderTop: `2px solid ${INK}`, paddingTop: 14 }}>
+        <div className="mb-3 h-section">{t("يحتاج إجراءً")}</div>
+        {actions.length === 0 ? (
+          <div className="text-sm" style={{ color: MUTED, padding: "6px 0 2px" }}>
+            {t("لا شيء معلّق — كل المستحقّات محصّلة ولا تجاوزات")}
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {actions.map((a, i) => (
+              <button key={a.kind + a.id + i} onClick={() => onOpenClient(a.id)}
+                      className="flex items-center justify-between py-3 text-start transition-colors hover:opacity-60"
+                      style={{ borderBottom: `1px solid ${LINE}`, background: "none", cursor: "pointer" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <i className="stagedot" style={{ backgroundColor:
+                    a.kind === "due" ? COPPER : a.kind === "overrun" ? DANGER : MUTED }} />
+                  <span style={{ minWidth: 0 }}>
+                    <b className="truncate" style={{ fontWeight: 500, fontSize: 14 }}>{a.name}</b>
+                    <span style={{ display: "block", fontSize: 11, color: MUTED }}>
+                      {a.kind === "due" ? t("دفعة مستحقّة لم تُحصَّل")
+                        : a.kind === "pending" ? `${t("أمر تغيير معلّق")}${a.count ? ` (${a.count})` : ""}`
+                        : t("مرحلة تجاوزت ميزانيتها")}
+                    </span>
+                  </span>
+                </span>
+                <span className="num" style={{ fontSize: 14, whiteSpace: "nowrap",
+                      color: a.kind === "overrun" ? DANGER : INK }}>
+                  {fmt(a.amount)} {currency()}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ═══ خط الأعمال — يُخفَّض تحت المال لا فوقه ═══ */}
+      <div className="mb-6 h-section" style={{ borderTop: `1px solid ${INK}`, paddingTop: 14 }}>
+        {t("خط الأعمال")}
+      </div>
       <div className="mb-10 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-4 lg:grid-cols-7">
         <StatCard label={t("إجمالي العملاء")} value={stats.count} />
         <StatCard label={t("إجمالي قيمة خط الأعمال")} value={fmt(stats.totalValue)} sub={currency()} accent={COPPER} />
@@ -1792,7 +1892,7 @@ function RoomSchedule({ client, onChange }) {
                     value={r.name || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
                   <select className="inp" style={{ width: 110 }} value={r.type}
                     onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, type: e.target.value } : x))}>
-                    {Object.keys(ROOM_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
+                    {Object.keys(ROOM_TYPES).map(rt => <option key={rt} value={rt}>{t(rt)}</option>)}
                   </select>
                   <input className="inp num" style={{ width: 74 }} type="number" inputMode="decimal" placeholder={t("طول")}
                     value={r.length || ""} onChange={e => setRooms(rooms.map((x, j) => j === i ? { ...x, length: Number(e.target.value) || 0 } : x))} />
@@ -2502,36 +2602,36 @@ export function PhaseSpend({ client, settings, priceBook, onChange }) {
               <b className="num" style={{ color: pva.diff < 0 ? "#A8322B" : "#4A6152" }}>{fmt(pva.spentTotal)}</b>
             </span>
           </div>
-          {pva.totals.filter(t => t.planned > 0 || t.spent > 0).map(t => {
-            const max = Math.max(t.planned, t.spent) || 1;
+          {pva.totals.filter(x => x.planned > 0 || x.spent > 0).map(kd => {
+            const max = Math.max(kd.planned, kd.spent) || 1;
             return (
-              <div key={t.kind} className="mb-1.5">
+              <div key={kd.kind} className="mb-1.5">
                 <div className="flex items-baseline justify-between text-[10px]">
-                  <span style={{ color: KIND_COLOR[t.kind] }}>{KIND_LABEL[t.kind]}</span>
+                  <span style={{ color: KIND_COLOR[kd.kind] }}>{t(KIND_LABEL[kd.kind])}</span>
                   <span className="num">
-                    <span className="text-muted">{fmt(t.planned)}</span>
+                    <span className="text-muted">{fmt(kd.planned)}</span>
                     {" → "}
-                    <b style={{ color: t.overrun ? "#A8322B" : "#4A6152" }}>{fmt(t.spent)}</b>
-                    {t.overrun && <span style={{ color: "#A8322B" }}> (+{fmt(-t.diff)})</span>}
+                    <b style={{ color: kd.overrun ? "#A8322B" : "#4A6152" }}>{fmt(kd.spent)}</b>
+                    {kd.overrun && <span style={{ color: "#A8322B" }}> (+{fmt(-kd.diff)})</span>}
                   </span>
                 </div>
                 <div className="mt-0.5 flex gap-0.5">
-                  <div style={{ height: 5, width: `${(t.planned / max) * 100}%`, backgroundColor: KIND_COLOR[t.kind], opacity: 0.35 }} />
+                  <div style={{ height: 5, width: `${(kd.planned / max) * 100}%`, backgroundColor: KIND_COLOR[kd.kind], opacity: 0.35 }} />
                 </div>
                 <div className="flex gap-0.5">
-                  <div style={{ height: 5, width: `${(t.spent / max) * 100}%`, backgroundColor: t.overrun ? "#A8322B" : KIND_COLOR[t.kind] }} />
+                  <div style={{ height: 5, width: `${(kd.spent / max) * 100}%`, backgroundColor: kd.overrun ? "#A8322B" : KIND_COLOR[kd.kind] }} />
                 </div>
               </div>
             );
           })}
           {pva.worstKind && (
             <div className="mt-2 text-[10px] font-bold" style={{ color: "#A8322B" }}>
-              أكبر تجاوز في {KIND_LABEL[pva.worstKind.kind]}: {fmt(pva.worstKind.spent - pva.worstKind.planned)} {t("ج.م فوق المخطط")}
+              {t("أكبر تجاوز في")} {t(KIND_LABEL[pva.worstKind.kind])}: {fmt(pva.worstKind.spent - pva.worstKind.planned)} {t("ج.م فوق المخطط")}
             </div>
           )}
           {pva.coverage < 1 && (
             <div className="mt-1 text-[10px]" style={{ color: "#7A5E22" }}>
-              التحليل يغطي {(pva.coverage * 100).toFixed(0)}{t("% من المشروع — المقارنة تخصّ المحلَّل وحده.")}
+              {t("التحليل يغطي")} {(pva.coverage * 100).toFixed(0)}{t("% من المشروع — المقارنة تخصّ المحلَّل وحده.")}
             </div>
           )}
         </div>
